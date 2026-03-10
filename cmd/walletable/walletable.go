@@ -8,10 +8,10 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
+	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
 
-// Cmd is the walletable command group.
 var Cmd = &cobra.Command{
 	Use:   "walletable",
 	Short: "Manage walletables (口座)",
@@ -31,11 +31,25 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.ListWalletables(client.CompanyID, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.WalletablesResponse
 		if err := freeeAPI.ListWalletables(client.CompanyID, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		rows := make([]model.WalletableRow, len(resp.Walletables))
+		for i, w := range resp.Walletables {
+			rows[i] = model.WalletableRow{ID: w.ID, Name: w.Name, Type: w.Type}
+		}
+		return output.New("table").Format(os.Stdout, rows)
 	},
 }
 
@@ -50,12 +64,28 @@ var showCmd = &cobra.Command{
 		}
 		walletableType := args[0]
 		var id int64
-		_, _ = fmt.Sscanf(args[1], "%d", &id)
+		fmt.Sscanf(args[1], "%d", &id)
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.GetWalletable(client.CompanyID, walletableType, id, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.WalletableResponse
 		if err := freeeAPI.GetWalletable(client.CompanyID, walletableType, id, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		w := resp.Walletable
+		fmt.Printf("ID:       %d\n", w.ID)
+		fmt.Printf("Name:     %s\n", w.Name)
+		fmt.Printf("Type:     %s\n", w.Type)
+		fmt.Printf("Balance:  %d\n", w.WalletableBalance)
+		fmt.Printf("Updated:  %s\n", w.UpdateDate)
+		return nil
 	},
 }

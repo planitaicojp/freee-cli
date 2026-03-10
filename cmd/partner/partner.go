@@ -8,10 +8,10 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
+	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
 
-// Cmd is the partner command group.
 var Cmd = &cobra.Command{
 	Use:   "partner",
 	Short: "Manage partners (取引先)",
@@ -34,11 +34,25 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.ListPartners(client.CompanyID, "", &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.PartnersResponse
 		if err := freeeAPI.ListPartners(client.CompanyID, "", &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		rows := make([]model.PartnerRow, len(resp.Partners))
+		for i, p := range resp.Partners {
+			rows[i] = model.PartnerRow{ID: p.ID, Name: p.Name, Code: p.Code}
+		}
+		return output.New("table").Format(os.Stdout, rows)
 	},
 }
 
@@ -54,11 +68,39 @@ var showCmd = &cobra.Command{
 		var id int64
 		fmt.Sscanf(args[0], "%d", &id)
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.GetPartner(client.CompanyID, id, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.PartnerResponse
 		if err := freeeAPI.GetPartner(client.CompanyID, id, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		p := resp.Partner
+		fmt.Printf("ID:        %d\n", p.ID)
+		fmt.Printf("Name:      %s\n", p.Name)
+		if p.Code != "" {
+			fmt.Printf("Code:      %s\n", p.Code)
+		}
+		if p.LongName != "" {
+			fmt.Printf("Long Name: %s\n", p.LongName)
+		}
+		if p.Shortcut1 != "" {
+			fmt.Printf("Shortcut1: %s\n", p.Shortcut1)
+		}
+		if p.Shortcut2 != "" {
+			fmt.Printf("Shortcut2: %s\n", p.Shortcut2)
+		}
+		fmt.Printf("Country:   %s\n", p.CountryCode)
+		fmt.Printf("Available: %v\n", p.Available)
+		fmt.Printf("Updated:   %s\n", p.UpdateDate)
+		return nil
 	},
 }
 
