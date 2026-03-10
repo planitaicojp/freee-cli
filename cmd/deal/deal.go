@@ -1,0 +1,186 @@
+package deal
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
+	"github.com/planitaicojp/freee-cli/internal/api"
+	"github.com/planitaicojp/freee-cli/internal/output"
+)
+
+// Cmd is the deal command group.
+var Cmd = &cobra.Command{
+	Use:   "deal",
+	Short: "Manage deals (取引)",
+}
+
+func init() {
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(showCmd)
+	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
+
+	listCmd.Flags().String("type", "", "filter by type: income or expense")
+	listCmd.Flags().String("partner", "", "filter by partner name")
+	listCmd.Flags().String("from", "", "start date (YYYY-MM-DD)")
+	listCmd.Flags().String("to", "", "end date (YYYY-MM-DD)")
+	listCmd.Flags().String("status", "", "filter by status: settled or unsettled")
+	listCmd.Flags().Int("limit", 50, "max number of results")
+	listCmd.Flags().Int("offset", 0, "offset for pagination")
+
+	createCmd.Flags().String("type", "", "deal type: income or expense (required)")
+	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
+	createCmd.Flags().Int64("partner-id", 0, "partner ID")
+	createCmd.Flags().String("partner", "", "partner name (for display)")
+	createCmd.Flags().Int64("account-item-id", 0, "account item ID (required)")
+	createCmd.Flags().Int64("amount", 0, "amount (required)")
+	createCmd.Flags().Int64("tax-code", 0, "tax code")
+}
+
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List deals",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		params := buildListParams(cmd)
+		if err := freeeAPI.ListDeals(client.CompanyID, params, &resp); err != nil {
+			return err
+		}
+
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+	},
+}
+
+var showCmd = &cobra.Command{
+	Use:   "show <id>",
+	Short: "Show deal details",
+	Args:  cmdutil.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		var dealID int64
+		fmt.Sscanf(args[0], "%d", &dealID)
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.GetDeal(client.CompanyID, dealID, &resp); err != nil {
+			return err
+		}
+
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+	},
+}
+
+var createCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a deal",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		dealType, _ := cmd.Flags().GetString("type")
+		date, _ := cmd.Flags().GetString("date")
+		accountItemID, _ := cmd.Flags().GetInt64("account-item-id")
+		amount, _ := cmd.Flags().GetInt64("amount")
+		taxCode, _ := cmd.Flags().GetInt64("tax-code")
+		partnerID, _ := cmd.Flags().GetInt64("partner-id")
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+			"type":       dealType,
+			"issue_date": date,
+			"details": []map[string]any{
+				{
+					"account_item_id": accountItemID,
+					"amount":          amount,
+					"tax_code":        taxCode,
+				},
+			},
+		}
+		if partnerID != 0 {
+			body["partner_id"] = partnerID
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.CreateDeal(body, &resp); err != nil {
+			return err
+		}
+
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+	},
+}
+
+var updateCmd = &cobra.Command{
+	Use:   "update <id>",
+	Short: "Update a deal",
+	Args:  cmdutil.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// TODO: implement update
+		return fmt.Errorf("not yet implemented")
+	},
+}
+
+var deleteCmd = &cobra.Command{
+	Use:   "delete <id>",
+	Short: "Delete a deal",
+	Args:  cmdutil.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		var dealID int64
+		fmt.Sscanf(args[0], "%d", &dealID)
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		return freeeAPI.DeleteDeal(client.CompanyID, dealID)
+	},
+}
+
+func buildListParams(cmd *cobra.Command) string {
+	params := ""
+	add := func(key, value string) {
+		if value != "" {
+			if params != "" {
+				params += "&"
+			}
+			params += key + "=" + value
+		}
+	}
+	t, _ := cmd.Flags().GetString("type")
+	add("type", t)
+	partner, _ := cmd.Flags().GetString("partner")
+	add("partner_code", partner)
+	from, _ := cmd.Flags().GetString("from")
+	add("start_issue_date", from)
+	to, _ := cmd.Flags().GetString("to")
+	add("end_issue_date", to)
+	status, _ := cmd.Flags().GetString("status")
+	add("status", status)
+	limit, _ := cmd.Flags().GetInt("limit")
+	if limit > 0 {
+		add("limit", fmt.Sprintf("%d", limit))
+	}
+	offset, _ := cmd.Flags().GetInt("offset")
+	if offset > 0 {
+		add("offset", fmt.Sprintf("%d", offset))
+	}
+	return params
+}
