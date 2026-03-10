@@ -9,6 +9,7 @@ import (
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
 	"github.com/planitaicojp/freee-cli/internal/config"
+	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
 
@@ -75,12 +76,55 @@ var showCmd = &cobra.Command{
 		}
 
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			// JSON/YAML/CSV: output raw API response
+			var resp any
+			if err := freeeAPI.GetCompany(companyID, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		// Table (default): key-value output
+		var resp model.CompanyResponse
 		if err := freeeAPI.GetCompany(companyID, &resp); err != nil {
 			return err
 		}
 
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		c := resp.Company
+		fmt.Printf("ID:          %d\n", c.ID)
+		fmt.Printf("Name:        %s\n", c.Name)
+		fmt.Printf("Display:     %s\n", c.DisplayName)
+		fmt.Printf("Name Kana:   %s\n", c.NameKana)
+		fmt.Printf("Role:        %s\n", c.Role)
+		if c.Phone1 != "" {
+			fmt.Printf("Phone 1:     %s\n", c.Phone1)
+		}
+		if c.Phone2 != "" {
+			fmt.Printf("Phone 2:     %s\n", c.Phone2)
+		}
+		if c.Zipcode != "" {
+			fmt.Printf("Zipcode:     %s\n", c.Zipcode)
+		}
+		addr := c.StreetName1
+		if c.StreetName2 != "" {
+			addr += " " + c.StreetName2
+		}
+		if addr != "" {
+			fmt.Printf("Address:     %s\n", addr)
+		}
+		if c.CompanyNumber != "" {
+			fmt.Printf("Company No:  %s\n", c.CompanyNumber)
+		}
+		fmt.Printf("Layout:      %s\n", c.InvoiceLayout)
+		fmt.Printf("Workflow:     %s\n", c.WorkflowSetting)
+		if len(c.FiscalYears) > 0 {
+			fy := c.FiscalYears[0]
+			fmt.Printf("Fiscal Year: %s ~ %s\n", fy.StartDate, fy.EndDate)
+		}
+		return nil
 	},
 }
 

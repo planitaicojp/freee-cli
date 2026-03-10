@@ -8,6 +8,7 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
+	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
 
@@ -31,11 +32,32 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.ListAccountItems(client.CompanyID, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.AccountItemsResponse
 		if err := freeeAPI.ListAccountItems(client.CompanyID, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+
+		rows := make([]model.AccountItemRow, len(resp.AccountItems))
+		for i, a := range resp.AccountItems {
+			rows[i] = model.AccountItemRow{
+				ID:       a.ID,
+				Name:     a.Name,
+				Category: a.AccountCategory,
+				TaxCode:  a.TaxCode,
+				Shortcut: a.ShortcutNum,
+			}
+		}
+		return output.New("table").Format(os.Stdout, rows)
 	},
 }
 
@@ -51,10 +73,35 @@ var showCmd = &cobra.Command{
 		var id int64
 		fmt.Sscanf(args[0], "%d", &id)
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.GetAccountItem(client.CompanyID, id, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.AccountItemResponse
 		if err := freeeAPI.GetAccountItem(client.CompanyID, id, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		a := resp.AccountItem
+		fmt.Printf("ID:        %d\n", a.ID)
+		fmt.Printf("Name:      %s\n", a.Name)
+		fmt.Printf("Category:  %s\n", a.AccountCategory)
+		if a.GroupName != "" {
+			fmt.Printf("Group:     %s\n", a.GroupName)
+		}
+		fmt.Printf("Tax Code:  %d\n", a.TaxCode)
+		if a.Shortcut != "" {
+			fmt.Printf("Shortcut:  %s\n", a.Shortcut)
+		}
+		if a.ShortcutNum != "" {
+			fmt.Printf("Number:    %s\n", a.ShortcutNum)
+		}
+		fmt.Printf("Available: %v\n", a.Available)
+		return nil
 	},
 }

@@ -8,10 +8,10 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
+	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
 
-// Cmd is the tag command group.
 var Cmd = &cobra.Command{
 	Use:   "tag",
 	Short: "Manage tags (メモタグ)",
@@ -33,11 +33,25 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.ListTags(client.CompanyID, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.TagsResponse
 		if err := freeeAPI.ListTags(client.CompanyID, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		rows := make([]model.TagRow, len(resp.Tags))
+		for i, t := range resp.Tags {
+			rows[i] = model.TagRow{ID: t.ID, Name: t.Name}
+		}
+		return output.New("table").Format(os.Stdout, rows)
 	},
 }
 

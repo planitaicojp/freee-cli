@@ -330,4 +330,108 @@ done
 
 | Version | Date | Description |
 |---------|------|-------------|
-| 0.1.0 | TBD | Phase 1 — 기반 + Accounting API |
+| 0.1.1 | TBD | 出力改善、型付きモデル導入 |
+| 0.1.0 | 2026-03-10 | Phase 1 — 기반 + Accounting API |
+
+### 0.1.1 Changes
+
+#### 問題点
+
+freee API のレスポンスはラッパーオブジェクトで包まれている（例: `{"company": {...}}`、`{"account_items": [...]}`）。
+v0.1.0 では `var resp any` で受け取っていたため：
+
+- `--format table`（デフォルト）で `map[company:map[...]]` のような Go 内部表現が表示される
+- 数値が `1.2261605e+07` のような指数表記になる
+- list 系コマンドでテーブルヘッダーが出ない
+
+#### 修正方針
+
+1. **型付きモデル導入** (`internal/model/`): API レスポンスに対応する Go 構造体を定義
+2. **show コマンドの key-value 出力**: `--format table` 時は `key: value` 形式で読みやすく表示
+3. **list コマンドのテーブル出力**: ラッパーを剥がして配列部分のみフォーマッタに渡す
+
+#### 対象コマンド
+
+| コマンド | 現状 | 修正後 |
+|----------|------|--------|
+| `company show` | `map[company:map[...]]` | key-value 形式（ID, Name, Role, Phone, Address 等） |
+| `company list` | 動作中（既に型あり） | 変更なし |
+| `account list` | `map[account_items:[...]]` | テーブル（ID, Name, Category, Tax Code） |
+| `item list` | `map[items:[...]]` | テーブル（ID, Name, Available） |
+| `section list` | `map[sections:[...]]` | テーブル（ID, Name） |
+| `tag list` | `map[tags:[...]]` | テーブル（ID, Name） |
+| `walletable list` | `map[walletables:[...]]` | テーブル（ID, Type, Name） |
+| `partner list` | `map[partners:[...]]` | テーブル（ID, Name, Code） |
+| `deal list` | `map[deals:[...]]` | テーブル（ID, Date, Type, Amount, Status） |
+| `invoice list` | `map[invoices:[...]]` | テーブル（ID, Number, Partner, Amount, Status） |
+| `expense list` | `map[expense_applications:[...]]` | テーブル（ID, Title, Amount, Status） |
+
+#### 新規ファイル
+
+| ファイル | 内容 |
+|----------|------|
+| `internal/model/company.go` | Company 構造体 |
+| `internal/model/account.go` | AccountItem 構造体 |
+| `internal/model/item.go` | Item 構造体 |
+| `internal/model/section.go` | Section 構造体 |
+| `internal/model/tag.go` | Tag 構造体 |
+| `internal/model/walletable.go` | Walletable 構造体 |
+| `internal/model/partner.go` | Partner 構造体 |
+| `internal/model/deal.go` | Deal 構造体 |
+| `internal/model/invoice.go` | Invoice 構造体 |
+| `internal/model/expense.go` | ExpenseApplication 構造体 |
+
+#### `company show` の出力例
+
+**修正前**:
+```
+map[company:map[amount_fraction:0 company_number:7305785747 ...]]
+```
+
+**修正後** (`--format table`、デフォルト):
+```
+ID:          12261605
+Name:        姜文喜
+Display:     姜 文喜
+Name Kana:   カンムンヒ
+Role:        admin
+Phone:       080-4209-1342
+Zipcode:     154-0002
+Address:     世田谷区下馬3-23-21 プレシス三軒茶屋204
+Fiscal Year: 2025-01-01 ~ 2025-12-31
+```
+
+**修正後** (`--format json`):
+```json
+{"company": {"id": 12261605, "name": "姜文喜", ...}}
+```
+（API レスポンスをそのまま出力）
+
+#### `account list` の出力例
+
+**修正前**:
+```
+map[account_items:[map[account_category:事業主借 ...] ...]]
+```
+
+**修正後**:
+```
+ID           NAME                        CATEGORY    TAX_CODE
+983573891    [確]一時収入                  事業主借      2
+983573893    [確]保険金補填（医療費）        事業主借      2
+```
+
+#### 修正ファイル
+
+| ファイル | 変更内容 |
+|----------|----------|
+| `cmd/company/company.go` | show で型付きモデル使用、key-value 出力 |
+| `cmd/account/account.go` | list/show でラッパー剥がし＋行構造体 |
+| `cmd/item/item.go` | 同上 |
+| `cmd/section/section.go` | 同上 |
+| `cmd/tag/tag.go` | 同上 |
+| `cmd/walletable/walletable.go` | 同上 |
+| `cmd/partner/partner.go` | 同上 |
+| `cmd/deal/deal.go` | 同上 |
+| `cmd/invoice/invoice.go` | 同上 |
+| `cmd/expense/expense.go` | 同上 |

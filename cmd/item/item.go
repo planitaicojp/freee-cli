@@ -8,6 +8,7 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
+	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
 
@@ -33,11 +34,30 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
-		var resp any
+
+		format := cmdutil.GetFormat(cmd)
+		if format != "" && format != "table" {
+			var resp any
+			if err := freeeAPI.ListItems(client.CompanyID, &resp); err != nil {
+				return err
+			}
+			return output.New(format).Format(os.Stdout, resp)
+		}
+
+		var resp model.ItemsResponse
 		if err := freeeAPI.ListItems(client.CompanyID, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+
+		rows := make([]model.ItemRow, len(resp.Items))
+		for i, item := range resp.Items {
+			rows[i] = model.ItemRow{
+				ID:        item.ID,
+				Name:      item.Name,
+				Available: item.Available,
+			}
+		}
+		return output.New("table").Format(os.Stdout, rows)
 	},
 }
 
