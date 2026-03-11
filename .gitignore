@@ -19,6 +19,9 @@ diary/
 *.swo
 *~
 
+# Reference
+ref/
+
 # OS
 .DS_Store
 Thumbs.db

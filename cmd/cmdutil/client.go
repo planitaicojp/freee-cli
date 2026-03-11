@@ -76,6 +76,18 @@ func getProfile(cmd *cobra.Command) string {
 	return "default"
 }
 
+// IsDryRun returns whether dry-run mode is enabled.
+func IsDryRun(cmd *cobra.Command) bool {
+	v, _ := cmd.Flags().GetBool("dry-run")
+	return v
+}
+
+// IsAll returns whether --all flag is set.
+func IsAll(cmd *cobra.Command) bool {
+	v, _ := cmd.Flags().GetBool("all")
+	return v
+}
+
 func getCompanyID(cmd *cobra.Command, profile config.Profile) int64 {
 	if id, _ := cmd.Flags().GetInt64("company-id"); id != 0 {
 		return id

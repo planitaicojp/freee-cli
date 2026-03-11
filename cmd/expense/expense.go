@@ -25,8 +25,9 @@ func init() {
 	Cmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().String("status", "", "filter by status")
-	listCmd.Flags().Int("limit", 50, "max number of results")
+	listCmd.Flags().Int("limit", 50, "max number of results per page")
 	listCmd.Flags().Int("offset", 0, "offset for pagination")
+	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
 }
 
 var listCmd = &cobra.Command{
@@ -129,12 +130,18 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete an expense application",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var id int64
+		fmt.Sscanf(args[0], "%d", &id)
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/expense_applications/%d\n", id)
+			return nil
+		}
+
 		client, err := cmdutil.NewClient(cmd)
 		if err != nil {
 			return err
 		}
-		var id int64
-		fmt.Sscanf(args[0], "%d", &id)
 		freeeAPI := &api.FreeeAPI{Client: client}
 		return freeeAPI.DeleteExpenseApplication(client.CompanyID, id)
 	},

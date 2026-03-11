@@ -34,6 +34,7 @@ var (
 	flagQuiet     bool
 	flagVerbose   bool
 	flagNoColor   bool
+	flagDryRun    bool
 )
 
 // rootCmd is the base command.
@@ -62,6 +63,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagQuiet, "quiet", false, "suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVar(&flagVerbose, "verbose", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "disable color output")
+	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "preview request without executing (mutating commands only)")
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
@@ -134,4 +136,9 @@ func IsQuiet() bool {
 // IsVerbose returns whether verbose mode is enabled.
 func IsVerbose() bool {
 	return flagVerbose
+}
+
+// IsDryRun returns whether dry-run mode is enabled.
+func IsDryRun() bool {
+	return flagDryRun
 }

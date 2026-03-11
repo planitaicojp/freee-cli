@@ -126,12 +126,18 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete a partner",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var id int64
+		fmt.Sscanf(args[0], "%d", &id)
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/partners/%d\n", id)
+			return nil
+		}
+
 		client, err := cmdutil.NewClient(cmd)
 		if err != nil {
 			return err
 		}
-		var id int64
-		fmt.Sscanf(args[0], "%d", &id)
 		freeeAPI := &api.FreeeAPI{Client: client}
 		return freeeAPI.DeletePartner(client.CompanyID, id)
 	},

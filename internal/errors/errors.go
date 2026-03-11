@@ -31,7 +31,7 @@ type AuthError struct {
 }
 
 func (e *AuthError) Error() string {
-	return fmt.Sprintf("auth error: %s", e.Message)
+	return fmt.Sprintf("auth error: %s\nhint: run 'freee auth login' to authenticate", e.Message)
 }
 
 func (e *AuthError) ExitCode() int {
@@ -44,7 +44,7 @@ type ConfigError struct {
 }
 
 func (e *ConfigError) Error() string {
-	return fmt.Sprintf("config error: %s", e.Message)
+	return fmt.Sprintf("config error: %s\nhint: run 'freee auth login' to set up a profile", e.Message)
 }
 
 func (e *ConfigError) ExitCode() int {
@@ -58,7 +58,7 @@ type NotFoundError struct {
 }
 
 func (e *NotFoundError) Error() string {
-	return fmt.Sprintf("%s not found: %s", e.Resource, e.ID)
+	return fmt.Sprintf("%s not found: %s\nhint: check the ID and ensure the resource exists in the current company", e.Resource, e.ID)
 }
 
 func (e *NotFoundError) ExitCode() int {
@@ -88,7 +88,7 @@ type NetworkError struct {
 }
 
 func (e *NetworkError) Error() string {
-	return fmt.Sprintf("network error: %v", e.Err)
+	return fmt.Sprintf("network error: %v\nhint: check your internet connection and try again", e.Err)
 }
 
 func (e *NetworkError) Unwrap() error {

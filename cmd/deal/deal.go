@@ -30,8 +30,9 @@ func init() {
 	listCmd.Flags().String("from", "", "start date (YYYY-MM-DD)")
 	listCmd.Flags().String("to", "", "end date (YYYY-MM-DD)")
 	listCmd.Flags().String("status", "", "filter by status: settled or unsettled")
-	listCmd.Flags().Int("limit", 50, "max number of results")
+	listCmd.Flags().Int("limit", 50, "max number of results per page")
 	listCmd.Flags().Int("offset", 0, "offset for pagination")
+	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
 
 	createCmd.Flags().String("type", "", "deal type: income or expense (required)")
 	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
@@ -50,9 +51,40 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
-		params := buildListParams(cmd)
 
 		format := cmdutil.GetFormat(cmd)
+		fetchAll := cmdutil.IsAll(cmd)
+
+		if fetchAll {
+			limit, _ := cmd.Flags().GetInt("limit")
+			if limit <= 0 {
+				limit = 100
+			}
+			var allDeals []model.Deal
+			for offset := 0; ; offset += limit {
+				cmd.Flags().Set("offset", fmt.Sprintf("%d", offset))
+				cmd.Flags().Set("limit", fmt.Sprintf("%d", limit))
+				params := buildListParams(cmd)
+				var resp model.DealsResponse
+				if err := freeeAPI.ListDeals(client.CompanyID, params, &resp); err != nil {
+					return err
+				}
+				allDeals = append(allDeals, resp.Deals...)
+				if len(resp.Deals) < limit {
+					break
+				}
+			}
+			if format != "" && format != "table" {
+				return output.New(format).Format(os.Stdout, map[string]any{"deals": allDeals})
+			}
+			rows := make([]model.DealRow, len(allDeals))
+			for i, d := range allDeals {
+				rows[i] = model.DealRow{ID: d.ID, Date: d.IssueDate, Type: d.Type, Amount: d.Amount, Status: d.Status}
+			}
+			return output.New("table").Format(os.Stdout, rows)
+		}
+
+		params := buildListParams(cmd)
 		if format != "" && format != "table" {
 			var resp any
 			if err := freeeAPI.ListDeals(client.CompanyID, params, &resp); err != nil {
@@ -67,13 +99,7 @@ var listCmd = &cobra.Command{
 		}
 		rows := make([]model.DealRow, len(resp.Deals))
 		for i, d := range resp.Deals {
-			rows[i] = model.DealRow{
-				ID:     d.ID,
-				Date:   d.IssueDate,
-				Type:   d.Type,
-				Amount: d.Amount,
-				Status: d.Status,
-			}
+			rows[i] = model.DealRow{ID: d.ID, Date: d.IssueDate, Type: d.Type, Amount: d.Amount, Status: d.Status}
 		}
 		return output.New("table").Format(os.Stdout, rows)
 	},
@@ -170,6 +196,11 @@ var createCmd = &cobra.Command{
 			body["partner_id"] = partnerID
 		}
 
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/deals")
+			return output.New("json").Format(os.Stdout, body)
+		}
+
 		freeeAPI := &api.FreeeAPI{Client: client}
 		var resp any
 		if err := freeeAPI.CreateDeal(body, &resp); err != nil {
@@ -194,14 +225,18 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete a deal",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var dealID int64
+		fmt.Sscanf(args[0], "%d", &dealID)
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/deals/%d\n", dealID)
+			return nil
+		}
+
 		client, err := cmdutil.NewClient(cmd)
 		if err != nil {
 			return err
 		}
-
-		var dealID int64
-		fmt.Sscanf(args[0], "%d", &dealID)
-
 		freeeAPI := &api.FreeeAPI{Client: client}
 		return freeeAPI.DeleteDeal(client.CompanyID, dealID)
 	},
