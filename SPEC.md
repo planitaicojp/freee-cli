@@ -342,21 +342,22 @@ freee auth login
 | **HR 承認経路** | | | |
 | 218 | `freee hr-approval-route list` | HR承認経路 목록 | ☐ |
 | 219 | `freee hr-approval-route show <id>` | HR承認経路 상세 | ☐ |
+| **HR ユーザー** | | | |
+| 220 | `freee hr-user me` | HR現在ユーザー情報 | ☐ |
 | **年末調整 (Year-End Adjustment)** | | | |
-| 220 | `freee hr-yearend employees` | 年末調整対象者 | ☐ |
-| 221 | `freee hr-yearend dependents <emp-id>` | 扶養控除 상세 | ☐ |
-| 222 | `freee hr-yearend housing-loans <emp-id>` | 住宅ローン控除 | ☐ |
-| 223 | `freee hr-yearend insurances <emp-id>` | 保険料控除 | ☐ |
-| 224 | `freee hr-yearend life-insurances <emp-id>` | 生命保険料控除 | ☐ |
-| 225 | `freee hr-yearend social-insurances <emp-id>` | 社会保険料控除 | ☐ |
-| 226 | `freee hr-yearend earthquake-insurances <emp-id>` | 地震保険料控除 | ☐ |
-| 227 | `freee hr-yearend payroll <emp-id>` | 給与所得 | ☐ |
-| 228 | `freee hr-yearend previous-jobs <emp-id>` | 前職情報 | ☐ |
-| 229 | `freee hr-yearend base <emp-id>` | 基本情報 | ☐ |
-| 230 | `freee hr-yearend status <emp-id>` | ステータス | ☐ |
-| 231 | `freee hr-yearend result <emp-id>` | 計算結果 | ☐ |
-| 232 | `freee hr-yearend summary` | 年末調整サマリー | ☐ |
-| 233 | `freee hr-user me` | HR現在ユーザー情報 | ☐ |
+| 221 | `freee hr-yearend employees` | 年末調整対象者 | ☐ |
+| 222 | `freee hr-yearend dependents <emp-id>` | 扶養控除 상세 | ☐ |
+| 223 | `freee hr-yearend housing-loans <emp-id>` | 住宅ローン控除 | ☐ |
+| 224 | `freee hr-yearend insurances <emp-id>` | 保険料控除 | ☐ |
+| 225 | `freee hr-yearend life-insurances <emp-id>` | 生命保険料控除 | ☐ |
+| 226 | `freee hr-yearend social-insurances <emp-id>` | 社会保険料控除 | ☐ |
+| 227 | `freee hr-yearend earthquake-insurances <emp-id>` | 地震保険料控除 | ☐ |
+| 228 | `freee hr-yearend payroll <emp-id>` | 給与所得 | ☐ |
+| 229 | `freee hr-yearend previous-jobs <emp-id>` | 前職情報 | ☐ |
+| 230 | `freee hr-yearend base <emp-id>` | 基本情報 | ☐ |
+| 231 | `freee hr-yearend status <emp-id>` | ステータス | ☐ |
+| 232 | `freee hr-yearend result <emp-id>` | 計算結果 | ☐ |
+| 233 | `freee hr-yearend summary` | 年末調整サマリー | ☐ |
 
 ### Phase 6: Invoice API + PM API + Sales API (39 commands)
 
