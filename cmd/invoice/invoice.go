@@ -26,8 +26,9 @@ func init() {
 
 	listCmd.Flags().String("status", "", "filter by status")
 	listCmd.Flags().String("partner", "", "filter by partner name")
-	listCmd.Flags().Int("limit", 50, "max number of results")
+	listCmd.Flags().Int("limit", 50, "max number of results per page")
 	listCmd.Flags().Int("offset", 0, "offset for pagination")
+	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
 }
 
 var listCmd = &cobra.Command{
@@ -142,12 +143,18 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete an invoice",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var invoiceID int64
+		fmt.Sscanf(args[0], "%d", &invoiceID)
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/invoices/%d\n", invoiceID)
+			return nil
+		}
+
 		client, err := cmdutil.NewClient(cmd)
 		if err != nil {
 			return err
 		}
-		var invoiceID int64
-		fmt.Sscanf(args[0], "%d", &invoiceID)
 		freeeAPI := &api.FreeeAPI{Client: client}
 		return freeeAPI.DeleteInvoice(client.CompanyID, invoiceID)
 	},

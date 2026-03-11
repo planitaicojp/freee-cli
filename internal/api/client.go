@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	cerrors "github.com/planitaicojp/freee-cli/internal/errors"
@@ -77,8 +78,9 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		}
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 			if attempt < maxRetries && req.Body == nil {
+				wait := retryAfterDuration(resp, attempt)
 				resp.Body.Close()
-				time.Sleep(time.Duration(attempt+1) * time.Second)
+				time.Sleep(wait)
 				continue
 			}
 		}
@@ -177,6 +179,17 @@ func (c *Client) Delete(url string) error {
 	}
 	resp.Body.Close()
 	return nil
+}
+
+// retryAfterDuration parses the Retry-After header and returns the wait duration.
+// Falls back to exponential backoff if the header is missing or unparseable.
+func retryAfterDuration(resp *http.Response, attempt int) time.Duration {
+	if ra := resp.Header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return time.Duration(attempt+1) * time.Second
 }
 
 // parseAPIError reads the response body and returns an appropriate error.
