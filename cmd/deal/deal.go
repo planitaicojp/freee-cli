@@ -248,12 +248,16 @@ var updateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetInt64("partner-id"); v != 0 {
 			body["partner_id"] = v
 		}
-		if v, _ := cmd.Flags().GetInt64("account-item-id"); v != 0 {
+		if cmd.Flags().Changed("account-item-id") || cmd.Flags().Changed("amount") || cmd.Flags().Changed("tax-code") {
+			accountItemID, _ := cmd.Flags().GetInt64("account-item-id")
+			if accountItemID == 0 {
+				return fmt.Errorf("--account-item-id is required when updating deal details")
+			}
 			amount, _ := cmd.Flags().GetInt64("amount")
 			taxCode, _ := cmd.Flags().GetInt64("tax-code")
 			body["details"] = []map[string]any{
 				{
-					"account_item_id": v,
+					"account_item_id": accountItemID,
 					"amount":          amount,
 					"tax_code":        taxCode,
 				},

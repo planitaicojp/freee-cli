@@ -115,7 +115,9 @@ func TestClient_Post(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)                               //nolint:errcheck
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "received": body}) //nolint:errcheck
 	}))
 	defer ts.Close()

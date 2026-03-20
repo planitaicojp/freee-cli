@@ -131,10 +131,11 @@ var createCmd = &cobra.Command{
 		}
 
 		name, _ := cmd.Flags().GetString("name")
+		countryCode, _ := cmd.Flags().GetString("country-code")
 		body := map[string]any{
 			"company_id":   client.CompanyID,
 			"name":         name,
-			"country_code": "JP",
+			"country_code": countryCode,
 		}
 		if v, _ := cmd.Flags().GetString("code"); v != "" {
 			body["code"] = v
@@ -147,9 +148,6 @@ var createCmd = &cobra.Command{
 		}
 		if v, _ := cmd.Flags().GetString("shortcut2"); v != "" {
 			body["shortcut2"] = v
-		}
-		if v, _ := cmd.Flags().GetString("country-code"); v != "" {
-			body["country_code"] = v
 		}
 
 		if cmdutil.IsDryRun(cmd) {
