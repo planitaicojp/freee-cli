@@ -3,6 +3,7 @@ package walletable
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -63,8 +64,10 @@ var showCmd = &cobra.Command{
 			return err
 		}
 		walletableType := args[0]
-		var id int64
-		fmt.Sscanf(args[1], "%d", &id)
+		id, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid walletable ID: %s", args[1])
+		}
 		freeeAPI := &api.FreeeAPI{Client: client}
 
 		format := cmdutil.GetFormat(cmd)

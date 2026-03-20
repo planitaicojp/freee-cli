@@ -3,6 +3,7 @@ package invoice
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -29,6 +30,18 @@ func init() {
 	listCmd.Flags().Int("limit", 50, "max number of results per page")
 	listCmd.Flags().Int("offset", 0, "offset for pagination")
 	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
+
+	createCmd.Flags().Int64("partner-id", 0, "partner ID (required)")
+	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
+	createCmd.Flags().String("due-date", "", "due date YYYY-MM-DD")
+	createCmd.Flags().String("title", "", "invoice title")
+	createCmd.Flags().String("description", "", "description")
+
+	updateCmd.Flags().Int64("partner-id", 0, "partner ID")
+	updateCmd.Flags().String("date", "", "issue date YYYY-MM-DD")
+	updateCmd.Flags().String("due-date", "", "due date YYYY-MM-DD")
+	updateCmd.Flags().String("title", "", "invoice title")
+	updateCmd.Flags().String("description", "", "description")
 }
 
 var listCmd = &cobra.Command{
@@ -78,8 +91,10 @@ var showCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var invoiceID int64
-		fmt.Sscanf(args[0], "%d", &invoiceID)
+		invoiceID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid invoice ID: %s", args[0])
+		}
 		freeeAPI := &api.FreeeAPI{Client: client}
 
 		format := cmdutil.GetFormat(cmd)
@@ -125,7 +140,40 @@ var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create an invoice",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("not yet implemented")
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		partnerID, _ := cmd.Flags().GetInt64("partner-id")
+		date, _ := cmd.Flags().GetString("date")
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+			"partner_id": partnerID,
+			"issue_date": date,
+		}
+		if v, _ := cmd.Flags().GetString("due-date"); v != "" {
+			body["due_date"] = v
+		}
+		if v, _ := cmd.Flags().GetString("title"); v != "" {
+			body["title"] = v
+		}
+		if v, _ := cmd.Flags().GetString("description"); v != "" {
+			body["description"] = v
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/invoices")
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.CreateInvoice(body, &resp); err != nil {
+			return err
+		}
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
 
@@ -134,7 +182,46 @@ var updateCmd = &cobra.Command{
 	Short: "Update an invoice",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("not yet implemented")
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		invoiceID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid invoice ID: %s", args[0])
+		}
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+		}
+		if v, _ := cmd.Flags().GetInt64("partner-id"); v != 0 {
+			body["partner_id"] = v
+		}
+		if v, _ := cmd.Flags().GetString("date"); v != "" {
+			body["issue_date"] = v
+		}
+		if v, _ := cmd.Flags().GetString("due-date"); v != "" {
+			body["due_date"] = v
+		}
+		if v, _ := cmd.Flags().GetString("title"); v != "" {
+			body["title"] = v
+		}
+		if v, _ := cmd.Flags().GetString("description"); v != "" {
+			body["description"] = v
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] PUT /api/1/invoices/%d\n", invoiceID)
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.UpdateInvoice(invoiceID, body, &resp); err != nil {
+			return err
+		}
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
 
@@ -143,8 +230,10 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete an invoice",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var invoiceID int64
-		fmt.Sscanf(args[0], "%d", &invoiceID)
+		invoiceID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid invoice ID: %s", args[0])
+		}
 
 		if cmdutil.IsDryRun(cmd) {
 			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/invoices/%d\n", invoiceID)

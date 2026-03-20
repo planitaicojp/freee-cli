@@ -3,6 +3,7 @@ package partner
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -23,6 +24,20 @@ func init() {
 	Cmd.AddCommand(createCmd)
 	Cmd.AddCommand(updateCmd)
 	Cmd.AddCommand(deleteCmd)
+
+	createCmd.Flags().String("name", "", "partner name (required)")
+	createCmd.Flags().String("code", "", "partner code")
+	createCmd.Flags().String("long-name", "", "long name (正式名称)")
+	createCmd.Flags().String("shortcut1", "", "shortcut 1 (カナ)")
+	createCmd.Flags().String("shortcut2", "", "shortcut 2")
+	createCmd.Flags().String("country-code", "JP", "country code")
+
+	updateCmd.Flags().String("name", "", "partner name")
+	updateCmd.Flags().String("code", "", "partner code")
+	updateCmd.Flags().String("long-name", "", "long name (正式名称)")
+	updateCmd.Flags().String("shortcut1", "", "shortcut 1 (カナ)")
+	updateCmd.Flags().String("shortcut2", "", "shortcut 2")
+	updateCmd.Flags().String("country-code", "", "country code")
 }
 
 var listCmd = &cobra.Command{
@@ -65,8 +80,10 @@ var showCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var id int64
-		fmt.Sscanf(args[0], "%d", &id)
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid partner ID: %s", args[0])
+		}
 		freeeAPI := &api.FreeeAPI{Client: client}
 
 		format := cmdutil.GetFormat(cmd)
@@ -108,7 +125,44 @@ var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a partner",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("not yet implemented")
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		name, _ := cmd.Flags().GetString("name")
+		body := map[string]any{
+			"company_id":   client.CompanyID,
+			"name":         name,
+			"country_code": "JP",
+		}
+		if v, _ := cmd.Flags().GetString("code"); v != "" {
+			body["code"] = v
+		}
+		if v, _ := cmd.Flags().GetString("long-name"); v != "" {
+			body["long_name"] = v
+		}
+		if v, _ := cmd.Flags().GetString("shortcut1"); v != "" {
+			body["shortcut1"] = v
+		}
+		if v, _ := cmd.Flags().GetString("shortcut2"); v != "" {
+			body["shortcut2"] = v
+		}
+		if v, _ := cmd.Flags().GetString("country-code"); v != "" {
+			body["country_code"] = v
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/partners")
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.CreatePartner(body, &resp); err != nil {
+			return err
+		}
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
 
@@ -117,7 +171,49 @@ var updateCmd = &cobra.Command{
 	Short: "Update a partner",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("not yet implemented")
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid partner ID: %s", args[0])
+		}
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+		}
+		if v, _ := cmd.Flags().GetString("name"); v != "" {
+			body["name"] = v
+		}
+		if v, _ := cmd.Flags().GetString("code"); v != "" {
+			body["code"] = v
+		}
+		if v, _ := cmd.Flags().GetString("long-name"); v != "" {
+			body["long_name"] = v
+		}
+		if v, _ := cmd.Flags().GetString("shortcut1"); v != "" {
+			body["shortcut1"] = v
+		}
+		if v, _ := cmd.Flags().GetString("shortcut2"); v != "" {
+			body["shortcut2"] = v
+		}
+		if v, _ := cmd.Flags().GetString("country-code"); v != "" {
+			body["country_code"] = v
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] PUT /api/1/partners/%d\n", id)
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.UpdatePartner(id, body, &resp); err != nil {
+			return err
+		}
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
 
@@ -126,8 +222,10 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete a partner",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var id int64
-		fmt.Sscanf(args[0], "%d", &id)
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid partner ID: %s", args[0])
+		}
 
 		if cmdutil.IsDryRun(cmd) {
 			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/partners/%d\n", id)

@@ -3,6 +3,7 @@ package deal
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -40,6 +41,13 @@ func init() {
 	createCmd.Flags().Int64("account-item-id", 0, "account item ID (required)")
 	createCmd.Flags().Int64("amount", 0, "amount (required)")
 	createCmd.Flags().Int64("tax-code", 0, "tax code")
+
+	updateCmd.Flags().String("type", "", "deal type: income or expense")
+	updateCmd.Flags().String("date", "", "issue date YYYY-MM-DD")
+	updateCmd.Flags().Int64("partner-id", 0, "partner ID")
+	updateCmd.Flags().Int64("account-item-id", 0, "account item ID")
+	updateCmd.Flags().Int64("amount", 0, "amount")
+	updateCmd.Flags().Int64("tax-code", 0, "tax code")
 }
 
 var listCmd = &cobra.Command{
@@ -62,8 +70,8 @@ var listCmd = &cobra.Command{
 			}
 			var allDeals []model.Deal
 			for offset := 0; ; offset += limit {
-				cmd.Flags().Set("offset", fmt.Sprintf("%d", offset))
-				cmd.Flags().Set("limit", fmt.Sprintf("%d", limit))
+				_ = cmd.Flags().Set("offset", fmt.Sprintf("%d", offset)) //nolint:errcheck
+				_ = cmd.Flags().Set("limit", fmt.Sprintf("%d", limit))   //nolint:errcheck
 				params := buildListParams(cmd)
 				var resp model.DealsResponse
 				if err := freeeAPI.ListDeals(client.CompanyID, params, &resp); err != nil {
@@ -115,8 +123,10 @@ var showCmd = &cobra.Command{
 			return err
 		}
 
-		var dealID int64
-		fmt.Sscanf(args[0], "%d", &dealID)
+		dealID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid deal ID: %s", args[0])
+		}
 
 		freeeAPI := &api.FreeeAPI{Client: client}
 
@@ -216,7 +226,51 @@ var updateCmd = &cobra.Command{
 	Short: "Update a deal",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("not yet implemented")
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		dealID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid deal ID: %s", args[0])
+		}
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+		}
+		if v, _ := cmd.Flags().GetString("type"); v != "" {
+			body["type"] = v
+		}
+		if v, _ := cmd.Flags().GetString("date"); v != "" {
+			body["issue_date"] = v
+		}
+		if v, _ := cmd.Flags().GetInt64("partner-id"); v != 0 {
+			body["partner_id"] = v
+		}
+		if v, _ := cmd.Flags().GetInt64("account-item-id"); v != 0 {
+			amount, _ := cmd.Flags().GetInt64("amount")
+			taxCode, _ := cmd.Flags().GetInt64("tax-code")
+			body["details"] = []map[string]any{
+				{
+					"account_item_id": v,
+					"amount":          amount,
+					"tax_code":        taxCode,
+				},
+			}
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] PUT /api/1/deals/%d\n", dealID)
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.UpdateDeal(dealID, body, &resp); err != nil {
+			return err
+		}
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
 
@@ -225,8 +279,10 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete a deal",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var dealID int64
-		fmt.Sscanf(args[0], "%d", &dealID)
+		dealID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid deal ID: %s", args[0])
+		}
 
 		if cmdutil.IsDryRun(cmd) {
 			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/deals/%d\n", dealID)
