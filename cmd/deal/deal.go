@@ -68,11 +68,14 @@ var listCmd = &cobra.Command{
 			if limit <= 0 {
 				limit = 100
 			}
+			baseParams := buildBaseListParams(cmd)
 			var allDeals []model.Deal
 			for offset := 0; ; offset += limit {
-				_ = cmd.Flags().Set("offset", fmt.Sprintf("%d", offset)) //nolint:errcheck
-				_ = cmd.Flags().Set("limit", fmt.Sprintf("%d", limit))   //nolint:errcheck
-				params := buildListParams(cmd)
+				params := baseParams
+				if params != "" {
+					params += "&"
+				}
+				params += fmt.Sprintf("limit=%d&offset=%d", limit, offset)
 				var resp model.DealsResponse
 				if err := freeeAPI.ListDeals(client.CompanyID, params, &resp); err != nil {
 					return err
@@ -245,7 +248,8 @@ var updateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("date"); v != "" {
 			body["issue_date"] = v
 		}
-		if v, _ := cmd.Flags().GetInt64("partner-id"); v != 0 {
+		if cmd.Flags().Changed("partner-id") {
+			v, _ := cmd.Flags().GetInt64("partner-id")
 			body["partner_id"] = v
 		}
 		if cmd.Flags().Changed("account-item-id") || cmd.Flags().Changed("amount") || cmd.Flags().Changed("tax-code") {
@@ -302,7 +306,8 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
-func buildListParams(cmd *cobra.Command) string {
+// buildBaseListParams builds query params excluding limit/offset (for use with --all pagination).
+func buildBaseListParams(cmd *cobra.Command) string {
 	params := ""
 	add := func(key, value string) {
 		if value != "" {
@@ -322,6 +327,20 @@ func buildListParams(cmd *cobra.Command) string {
 	add("end_issue_date", to)
 	status, _ := cmd.Flags().GetString("status")
 	add("status", status)
+	return params
+}
+
+// buildListParams builds query params including limit/offset (for single-page requests).
+func buildListParams(cmd *cobra.Command) string {
+	params := buildBaseListParams(cmd)
+	add := func(key, value string) {
+		if value != "" {
+			if params != "" {
+				params += "&"
+			}
+			params += key + "=" + value
+		}
+	}
 	limit, _ := cmd.Flags().GetInt("limit")
 	if limit > 0 {
 		add("limit", fmt.Sprintf("%d", limit))

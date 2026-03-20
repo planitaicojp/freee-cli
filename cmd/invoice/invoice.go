@@ -195,7 +195,8 @@ var updateCmd = &cobra.Command{
 		body := map[string]any{
 			"company_id": client.CompanyID,
 		}
-		if v, _ := cmd.Flags().GetInt64("partner-id"); v != 0 {
+		if cmd.Flags().Changed("partner-id") {
+			v, _ := cmd.Flags().GetInt64("partner-id")
 			body["partner_id"] = v
 		}
 		if v, _ := cmd.Flags().GetString("date"); v != "" {
