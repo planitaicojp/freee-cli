@@ -1,958 +1,1124 @@
-# freee CLI Specification
+# freee CLI — 설계 명세서
 
-**Version**: 0.1.0
-**Status**: 설계 중 (Design Phase)
+**Version**: 0.3.0
+**Status**: Phase 1 완료 / Phase 2 개발 중
 **Binary**: `freee`
-**Repository**: `planitai-freee-cli`
-
-## 배경
-
-freee는 일본 최대 클라우드 회계/HR SaaS이며, 5종의 공개 API를 제공한다.
-공식 SDK는 대부분 archived 상태이고, CLI 도구는 존재하지 않는다.
-Agent-first CLI 시대에 맞춰, 단일 실행파일로 freee API를 조작할 수 있는 CLI를 제공한다.
-
-### SDK 미사용 방침
-
-- 공식 SDK: Java, JS, C# 모두 **archived**. PHP만 유지
-- 커뮤니티 Go SDK (`LayerXcom/freee-go`): 업데이트가 API 변경보다 느릴 수 있음
-- **결정**: SDK를 사용하지 않고, OpenAPI 스펙 기반으로 `net/http` 직접 호출
-- **장점**: API 변경에 즉시 대응 가능, 의존성 최소화, 빌드 크기 감소
-
-### 참고: freee-mcp
-
-freee는 공식 MCP 서버 (`freee/freee-mcp`, 303 stars)를 제공하지만,
-이는 Claude Code 등 AI 에이전트용이며 단독 CLI로는 사용할 수 없다.
-본 프로젝트는 전통적 CLI 도구로서 쉘 스크립트, CI/CD, 다양한 AI 에이전트에서 활용 가능하다.
+**Repository**: [planitaicojp/freee-cli](https://github.com/planitaicojp/freee-cli)
+**Language**: Go 1.26+
 
 ---
 
-## OAuth2 인증 플로우
+## 목차
 
-### App 등록 (사전 준비)
-
-1. https://app.secure.freee.co.jp/developers 에서 앱 등록
-2. Redirect URI: `http://localhost:8080/callback` (CLI 로컬 서버)
-3. Client ID / Client Secret 획득
-
-### 로그인 플로우
-
-```
-freee auth login
-```
-
-1. CLI가 랜덤 `state` + PKCE `code_verifier`/`code_challenge` 생성
-2. 로컬 HTTP 서버 시작 (`localhost:8080`)
-3. 브라우저 오픈 → `https://accounts.secure.freee.co.jp/public_api/authorize`
-4. 사용자가 freee에서 인가 → redirect → CLI가 `code` 수신
-5. `code` → token exchange → access_token + refresh_token 저장
-6. 사업소(company) 목록 조회 → 기본 사업소 설정
-
-### 토큰 관리
-
-- Access token: JWT, 유효기간 있음 → 자동 갱신
-- Refresh token: `~/.config/freee/credentials.yaml`에 저장 (0600)
-- 매 API 호출 전 토큰 유효성 확인, 만료 시 자동 refresh
+1. [배경과 목적](#1-배경과-목적)
+2. [설계 결정 (ADR)](#2-설계-결정-adr)
+3. [빠른 시작](#3-빠른-시작)
+4. [인증](#4-인증)
+5. [글로벌 플래그](#5-글로벌-플래그)
+6. [출력 명세](#6-출력-명세)
+7. [에러 카탈로그](#7-에러-카탈로그)
+8. [커맨드 레퍼런스](#8-커맨드-레퍼런스)
+9. [워크플로우 레시피](#9-워크플로우-레시피)
+10. [설정 레퍼런스](#10-설정-레퍼런스)
+11. [진행 현황](#11-진행-현황)
+12. [로드맵](#12-로드맵)
+13. [버전 이력](#13-버전-이력)
 
 ---
 
-## 명령어 목록
+## 1. 배경과 목적
 
-### Phase 1: 기반 + Accounting API 핵심
+### 과제
 
-| # | 명령어 | 설명 | 진행 |
-|---|--------|------|------|
-| **인증/설정** | | | |
-| 1 | `freee auth login` | OAuth2 브라우저 로그인 | ☐ |
-| 2 | `freee auth logout` | 토큰 삭제 | ☐ |
-| 3 | `freee auth status` | 현재 인증 상태 표시 | ☐ |
-| 4 | `freee auth list` | 등록된 모든 프로필 목록 | ☐ |
-| 5 | `freee auth switch <profile>` | 프로필 전환 | ☐ |
-| 6 | `freee auth remove <profile>` | 프로필 삭제 | ☐ |
-| 7 | `freee auth token` | 현재 access token 출력 (파이프용) | ☐ |
-| 8 | `freee config show` | 현재 설정 표시 | ☐ |
-| 9 | `freee config set <key> <value>` | 설정 변경 | ☐ |
-| 10 | `freee config path` | 설정 파일 경로 출력 | ☐ |
-| **사업소** | | | |
-| 11 | `freee company list` | 사업소 목록 | ☐ |
-| 12 | `freee company show [id]` | 사업소 상세 | ☐ |
-| 13 | `freee company switch <id>` | 기본 사업소 전환 | ☐ |
-| **거래 (Deals)** | | | |
-| 14 | `freee deal list` | 거래 목록 | ☐ |
-| 15 | `freee deal show <id>` | 거래 상세 | ☐ |
-| 16 | `freee deal create` | 거래 등록 | ☐ |
-| 17 | `freee deal update <id>` | 거래 수정 | ☐ |
-| 18 | `freee deal delete <id>` | 거래 삭제 | ☐ |
-| **청구서 (Invoices)** | | | |
-| 19 | `freee invoice list` | 청구서 목록 | ☐ |
-| 20 | `freee invoice show <id>` | 청구서 상세 | ☐ |
-| 21 | `freee invoice create` | 청구서 작성 | ☐ |
-| 22 | `freee invoice update <id>` | 청구서 수정 | ☐ |
-| 23 | `freee invoice delete <id>` | 청구서 삭제 | ☐ |
-| **거래처 (Partners)** | | | |
-| 24 | `freee partner list` | 거래처 목록 | ☐ |
-| 25 | `freee partner show <id>` | 거래처 상세 | ☐ |
-| 26 | `freee partner create` | 거래처 등록 | ☐ |
-| 27 | `freee partner update <id>` | 거래처 수정 | ☐ |
-| 28 | `freee partner delete <id>` | 거래처 삭제 | ☐ |
-| **勘定科目 (Account Items)** | | | |
-| 29 | `freee account list` | 勘定科目 목록 | ☐ |
-| 30 | `freee account show <id>` | 勘定科目 상세 | ☐ |
-| **부문 (Sections)** | | | |
-| 31 | `freee section list` | 부문 목록 | ☐ |
-| 32 | `freee section create` | 부문 등록 | ☐ |
-| 33 | `freee section update <id>` | 부문 수정 | ☐ |
-| 34 | `freee section delete <id>` | 부문 삭제 | ☐ |
-| **메모태그 (Tags)** | | | |
-| 35 | `freee tag list` | 태그 목록 | ☐ |
-| 36 | `freee tag create` | 태그 등록 | ☐ |
-| 37 | `freee tag update <id>` | 태그 수정 | ☐ |
-| 38 | `freee tag delete <id>` | 태그 삭제 | ☐ |
-| **품목 (Items)** | | | |
-| 39 | `freee item list` | 품목 목록 | ☐ |
-| 40 | `freee item create` | 품목 등록 | ☐ |
-| 41 | `freee item update <id>` | 품목 수정 | ☐ |
-| 42 | `freee item delete <id>` | 품목 삭제 | ☐ |
-| **분개 (Journals)** | | | |
-| 43 | `freee journal list` | 분개 목록 다운로드 | ☐ |
-| **경비신청 (Expenses)** | | | |
-| 44 | `freee expense list` | 경비신청 목록 | ☐ |
-| 45 | `freee expense show <id>` | 경비신청 상세 | ☐ |
-| 46 | `freee expense create` | 경비신청 작성 | ☐ |
-| 47 | `freee expense update <id>` | 경비신청 수정 | ☐ |
-| 48 | `freee expense delete <id>` | 경비신청 삭제 | ☐ |
-| **구좌 (Walletables)** | | | |
-| 49 | `freee walletable list` | 구좌 목록 | ☐ |
-| 50 | `freee walletable show <id>` | 구좌 상세 | ☐ |
-| **유틸리티** | | | |
-| 51 | `freee version` | 버전 표시 | ☐ |
-| 52 | `freee completion` | 쉘 자동완성 생성 | ☐ |
+freee는 일본 최대의 클라우드 회계/HR SaaS로, 5종의 공개 API를 제공한다. 그러나:
 
-### Phase 2: Accounting 확장 — 仕訳・振替・明細・税 (19 commands)
+- **공식 SDK는 사실상 archived** (Java, JS, C# — PHP만 유지)
+- **CLI 도구가 존재하지 않음** — curl을 직접 작성하거나 GUI를 사용하는 수밖에 없음
+- **월별 처리가 수작업** — 분개 확인, 경비 승인, 리포트 출력을 모두 브라우저에서 수행
+- **CI/CD에 통합 불가** — 자동화에는 독자적인 스크립트가 필요
 
-| # | 명령어 | 설명 | 진행 |
-|---|--------|------|------|
-| **仕訳帳 (Manual Journals)** | | | |
-| 53 | `freee manual-journal list` | 仕訳 목록 | ☐ |
-| 54 | `freee manual-journal show <id>` | 仕訳 상세 | ☐ |
-| 55 | `freee manual-journal create` | 仕訳 등록 | ☐ |
-| 56 | `freee manual-journal update <id>` | 仕訳 수정 | ☐ |
-| 57 | `freee manual-journal delete <id>` | 仕訳 삭제 | ☐ |
-| **振替伝票 (Transfers)** | | | |
-| 58 | `freee transfer list` | 振替 목록 | ☐ |
-| 59 | `freee transfer show <id>` | 振替 상세 | ☐ |
-| 60 | `freee transfer create` | 振替 등록 | ☐ |
-| 61 | `freee transfer update <id>` | 振替 수정 | ☐ |
-| 62 | `freee transfer delete <id>` | 振替 삭제 | ☐ |
-| **口座明細 (Wallet Transactions)** | | | |
-| 63 | `freee wallet-txn list` | 口座明細 목록 | ☐ |
-| 64 | `freee wallet-txn show <id>` | 口座明細 상세 | ☐ |
-| 65 | `freee wallet-txn create` | 口座明細 등록 | ☐ |
-| 66 | `freee wallet-txn delete <id>` | 口座明細 삭제 | ☐ |
-| **口座 (Walletables) 拡張** | | | |
-| 67 | `freee walletable create` | 口座 등록 | ☐ |
-| 68 | `freee walletable update <id>` | 口座 수정 | ☐ |
-| 69 | `freee walletable delete <id>` | 口座 삭제 | ☐ |
-| **税区分 (Taxes)** | | | |
-| 70 | `freee tax list` | 税区分 목록 | ☐ |
-| 71 | `freee tax show <code>` | 税区分 상세 | ☐ |
+### 해결책
 
-### Phase 3: Accounting 확장 — レポート + ファイルボックス (25 commands)
-
-| # | 명령어 | 설명 | 진행 |
-|---|--------|------|------|
-| **レポート (Reports)** | | | |
-| 72 | `freee report bs` | 貸借対照表 | ☐ |
-| 73 | `freee report bs-2y` | 貸借対照表 2期比較 | ☐ |
-| 74 | `freee report bs-3y` | 貸借対照表 3期比較 | ☐ |
-| 75 | `freee report bs-sections` | 貸借対照表 部門別 | ☐ |
-| 76 | `freee report bs-segments` | 貸借対照表 セグメント別 | ☐ |
-| 77 | `freee report pl` | 損益計算書 | ☐ |
-| 78 | `freee report pl-2y` | 損益計算書 2期比較 | ☐ |
-| 79 | `freee report pl-3y` | 損益計算書 3期比較 | ☐ |
-| 80 | `freee report pl-sections` | 損益計算書 部門別 | ☐ |
-| 81 | `freee report pl-segments` | 損益計算書 セグメント別 | ☐ |
-| 82 | `freee report cr` | キャッシュフロー計算書 | ☐ |
-| 83 | `freee report cr-2y` | キャッシュフロー 2期比較 | ☐ |
-| 84 | `freee report cr-3y` | キャッシュフロー 3期比較 | ☐ |
-| 85 | `freee report cr-sections` | キャッシュフロー 部門別 | ☐ |
-| 86 | `freee report cr-segments` | キャッシュフロー セグメント別 | ☐ |
-| 87 | `freee report general-ledger` | 総勘定元帳 | ☐ |
-| 88 | `freee report trial-bs` | 残高試算表 (BS) | ☐ |
-| 89 | `freee report trial-pl` | 残高試算表 (PL) | ☐ |
-| **ファイルボックス (Receipts)** | | | |
-| 90 | `freee receipt list` | 証憑 목록 | ☐ |
-| 91 | `freee receipt show <id>` | 証憑 상세 | ☐ |
-| 92 | `freee receipt create` | 証憑 アップロード | ☐ |
-| 93 | `freee receipt update <id>` | 証憑 수정 | ☐ |
-| 94 | `freee receipt delete <id>` | 証憑 삭제 | ☐ |
-| 95 | `freee receipt download <id>` | 証憑 ダウンロード | ☐ |
-| **銀行 (Banks)** | | | |
-| 96 | `freee bank list` | 銀行 목록 | ☐ |
-
-### Phase 4: Accounting 확장 — ワークフロー + サブリソース (44 commands)
-
-| # | 명령어 | 설명 | 진행 |
-|---|--------|------|------|
-| **承認 (Approvals)** | | | |
-| 97 | `freee approval list` | 承認依頼 목록 | ☐ |
-| 98 | `freee approval show <id>` | 承認依頼 상세 | ☐ |
-| 99 | `freee approval create` | 承認依頼 작성 | ☐ |
-| 100 | `freee approval update <id>` | 承認依頼 수정 | ☐ |
-| 101 | `freee approval delete <id>` | 承認依頼 삭제 | ☐ |
-| 102 | `freee approval action <id>` | 承認/却下 アクション | ☐ |
-| **承認フォーム/経路** | | | |
-| 103 | `freee approval-form list` | 承認フォーム 목록 | ☐ |
-| 104 | `freee approval-form show <id>` | 承認フォーム 상세 | ☐ |
-| 105 | `freee approval-route list` | 承認経路 목록 | ☐ |
-| 106 | `freee approval-route show <id>` | 承認経路 상세 | ☐ |
-| **支払依頼 (Payment Requests)** | | | |
-| 107 | `freee payment-request list` | 支払依頼 목록 | ☐ |
-| 108 | `freee payment-request show <id>` | 支払依頼 상세 | ☐ |
-| 109 | `freee payment-request create` | 支払依頼 작성 | ☐ |
-| 110 | `freee payment-request update <id>` | 支払依頼 수정 | ☐ |
-| 111 | `freee payment-request delete <id>` | 支払依頼 삭제 | ☐ |
-| 112 | `freee payment-request action <id>` | 支払依頼 承認/却下 | ☐ |
-| **経費テンプレート (Expense Templates)** | | | |
-| 113 | `freee expense-template list` | 経費テンプレート 목록 | ☐ |
-| 114 | `freee expense-template show <id>` | 経費テンプレート 상세 | ☐ |
-| 115 | `freee expense-template create` | 경비 テンプレート 등록 | ☐ |
-| 116 | `freee expense-template update <id>` | 경비 テンプレート 수정 | ☐ |
-| 117 | `freee expense-template delete <id>` | 경비 テンプレート 삭제 | ☐ |
-| **経費 アクション** | | | |
-| 118 | `freee expense action <id>` | 경비신청 承認/却下 | ☐ |
-| **取引 決済 (Deal Payments)** | | | |
-| 119 | `freee deal payment create <deal-id>` | 取引 決済 등록 | ☐ |
-| 120 | `freee deal payment update <deal-id> <id>` | 取引 決済 수정 | ☐ |
-| 121 | `freee deal payment delete <deal-id> <id>` | 取引 決済 삭제 | ☐ |
-| **取引 更新 (Deal Renews)** | | | |
-| 122 | `freee deal renew create <deal-id>` | 取引 +更新行 등록 | ☐ |
-| 123 | `freee deal renew update <deal-id> <id>` | 取引 更新行 수정 | ☐ |
-| 124 | `freee deal renew delete <deal-id> <id>` | 取引 更新行 삭제 | ☐ |
-| **見積書 (Quotations)** | | | |
-| 125 | `freee quotation list` | 見積書 목록 | ☐ |
-| 126 | `freee quotation show <id>` | 見積書 상세 | ☐ |
-| **セグメントタグ (Segment Tags)** | | | |
-| 127 | `freee segment-tag list` | セグメントタグ 목록 | ☐ |
-| 128 | `freee segment-tag create` | セグメントタグ 등록 | ☐ |
-| 129 | `freee segment-tag update <id>` | セグメントタグ 수정 | ☐ |
-| 130 | `freee segment-tag delete <id>` | セグメントタグ 삭제 | ☐ |
-| **事業所コード (Company Codes)** | | | |
-| 131 | `freee code account upsert` | 勘定科目コード 登録/更新 | ☐ |
-| 132 | `freee code section upsert` | 部門コード 登録/更新 | ☐ |
-| 133 | `freee code item upsert` | 品目コード 登録/更新 | ☐ |
-| 134 | `freee code tag upsert` | タグコード 登録/更新 | ☐ |
-| 135 | `freee code walletable upsert` | 口座コード 登録/更新 | ☐ |
-| **取引先コード** | | | |
-| 136 | `freee partner code create <partner-id>` | 取引先コード 등록 | ☐ |
-| 137 | `freee partner code update <partner-id>` | 取引先コード 수정 | ☐ |
-| **ユーザー** | | | |
-| 138 | `freee user list` | ユーザー 목록 | ☐ |
-| 139 | `freee user me` | 現在ユーザー情報 | ☐ |
-| 140 | `freee user capabilities` | ユーザー権限情報 | ☐ |
-
-### Phase 5: HR API 전체 (93 commands)
-
-| # | 명령어 | 설명 | 진행 |
-|---|--------|------|------|
-| **従業員 (Employees)** | | | |
-| 141 | `freee hr-employee list` | 従業員 목록 | ☐ |
-| 142 | `freee hr-employee show <id>` | 従業員 상세 | ☐ |
-| 143 | `freee hr-employee create` | 従業員 등록 | ☐ |
-| 144 | `freee hr-employee update <id>` | 従業員 수정 | ☐ |
-| 145 | `freee hr-employee delete <id>` | 従業員 삭제 | ☐ |
-| **勤怠 (Work Records)** | | | |
-| 146 | `freee hr-work-record list` | 勤怠 목록 | ☐ |
-| 147 | `freee hr-work-record show <id>` | 勤怠 상세 | ☐ |
-| 148 | `freee hr-work-record create` | 勤怠 등록 | ☐ |
-| 149 | `freee hr-work-record update <id>` | 勤怠 수정 | ☐ |
-| 150 | `freee hr-work-record delete <id>` | 勤怠 삭제 | ☐ |
-| **打刻 (Time Clocks)** | | | |
-| 151 | `freee hr-time-clock list` | 打刻 목록 | ☐ |
-| 152 | `freee hr-time-clock show <id>` | 打刻 상세 | ☐ |
-| 153 | `freee hr-time-clock create` | 打刻 등록 | ☐ |
-| 154 | `freee hr-time-clock available-types` | 打刻可能種別 | ☐ |
-| **所定勤務タグ (Attendance Tags)** | | | |
-| 155 | `freee hr-attendance-tag list` | 所定勤務タグ 목록 | ☐ |
-| 156 | `freee hr-attendance-tag show <id>` | 所定勤務タグ 상세 | ☐ |
-| 157 | `freee hr-attendance-tag create` | 所定勤務タグ 등록 | ☐ |
-| 158 | `freee hr-attendance-tag update <id>` | 所定勤務タグ 수정 | ☐ |
-| 159 | `freee hr-attendance-tag delete <id>` | 所定勤務タグ 삭제 | ☐ |
-| **給与/賞与 (Salary & Bonus)** | | | |
-| 160 | `freee hr-salary list` | 給与明細 목록 | ☐ |
-| 161 | `freee hr-salary show <id>` | 給与明細 상세 | ☐ |
-| 162 | `freee hr-bonus list` | 賞与明細 목록 | ☐ |
-| 163 | `freee hr-bonus show <id>` | 賞与明細 상세 | ☐ |
-| **グループ/役職** | | | |
-| 164 | `freee hr-group list` | グループ 목록 | ☐ |
-| 165 | `freee hr-group show <id>` | グループ 상세 | ☐ |
-| 166 | `freee hr-group create` | グループ 등록 | ☐ |
-| 167 | `freee hr-group update <id>` | グループ 수정 | ☐ |
-| 168 | `freee hr-position list` | 役職 목록 | ☐ |
-| 169 | `freee hr-position show <id>` | 役職 상세 | ☐ |
-| 170 | `freee hr-position create` | 役職 등록 | ☐ |
-| **従業員ルール (Employee Sub-resources)** | | | |
-| 171 | `freee hr-employee bank-account show <emp-id>` | 振込先口座 | ☐ |
-| 172 | `freee hr-employee bank-account update <emp-id>` | 振込先口座 수정 | ☐ |
-| 173 | `freee hr-employee basic-pay show <emp-id>` | 基本給 | ☐ |
-| 174 | `freee hr-employee basic-pay update <emp-id>` | 基本給 수정 | ☐ |
-| 175 | `freee hr-employee dependents show <emp-id>` | 扶養親族 | ☐ |
-| 176 | `freee hr-employee dependents update <emp-id>` | 扶養親族 수정 | ☐ |
-| 177 | `freee hr-employee health-insurance show <emp-id>` | 健康保険 | ☐ |
-| 178 | `freee hr-employee health-insurance update <emp-id>` | 健康保険 수정 | ☐ |
-| 179 | `freee hr-employee welfare-pension show <emp-id>` | 厚生年金 | ☐ |
-| 180 | `freee hr-employee welfare-pension update <emp-id>` | 厚生年金 수정 | ☐ |
-| 181 | `freee hr-employee profile show <emp-id>` | プロフィール | ☐ |
-| 182 | `freee hr-employee profile update <emp-id>` | プロフィール 수정 | ☐ |
-| 183 | `freee hr-employee work-record-summary show <emp-id>` | 勤怠サマリー | ☐ |
-| 184 | `freee hr-employee tax-withholding show <emp-id>` | 源泉徴収 | ☐ |
-| 185 | `freee hr-employee social-insurance show <emp-id>` | 社会保険 | ☐ |
-| 186 | `freee hr-employee social-insurance update <emp-id>` | 社会保険 수정 | ☐ |
-| 187 | `freee hr-employee employment-insurance show <emp-id>` | 雇用保険 | ☐ |
-| **HR 承認ワークフロー** | | | |
-| 188 | `freee hr-approval-monthly list` | 月次勤怠承認 목록 | ☐ |
-| 189 | `freee hr-approval-monthly show <id>` | 月次勤怠承認 상세 | ☐ |
-| 190 | `freee hr-approval-monthly create` | 月次勤怠承認 작성 | ☐ |
-| 191 | `freee hr-approval-monthly update <id>` | 月次勤怠承認 수정 | ☐ |
-| 192 | `freee hr-approval-monthly delete <id>` | 月次勤怠承認 삭제 | ☐ |
-| 193 | `freee hr-approval-monthly action <id>` | 月次勤怠 承認/却下 | ☐ |
-| 194 | `freee hr-approval-overtime list` | 残業承認 목록 | ☐ |
-| 195 | `freee hr-approval-overtime show <id>` | 残業承認 상세 | ☐ |
-| 196 | `freee hr-approval-overtime create` | 残業承認 작성 | ☐ |
-| 197 | `freee hr-approval-overtime update <id>` | 残業承認 수정 | ☐ |
-| 198 | `freee hr-approval-overtime delete <id>` | 残業承認 삭제 | ☐ |
-| 199 | `freee hr-approval-overtime action <id>` | 残業 承認/却下 | ☐ |
-| 200 | `freee hr-approval-paid-leave list` | 有休承認 목록 | ☐ |
-| 201 | `freee hr-approval-paid-leave show <id>` | 有休承認 상세 | ☐ |
-| 202 | `freee hr-approval-paid-leave create` | 有休承認 작성 | ☐ |
-| 203 | `freee hr-approval-paid-leave update <id>` | 有休承認 수정 | ☐ |
-| 204 | `freee hr-approval-paid-leave delete <id>` | 有休承認 삭제 | ☐ |
-| 205 | `freee hr-approval-paid-leave action <id>` | 有休 承認/却下 | ☐ |
-| 206 | `freee hr-approval-special-leave list` | 特別休暇承認 목록 | ☐ |
-| 207 | `freee hr-approval-special-leave show <id>` | 特別休暇承認 상세 | ☐ |
-| 208 | `freee hr-approval-special-leave create` | 特別休暇承認 작성 | ☐ |
-| 209 | `freee hr-approval-special-leave update <id>` | 特別休暇承認 수정 | ☐ |
-| 210 | `freee hr-approval-special-leave delete <id>` | 特別休暇承認 삭제 | ☐ |
-| 211 | `freee hr-approval-special-leave action <id>` | 特別休暇 承認/却下 | ☐ |
-| 212 | `freee hr-approval-work-time list` | 勤務時間承認 목록 | ☐ |
-| 213 | `freee hr-approval-work-time show <id>` | 勤務時間承認 상세 | ☐ |
-| 214 | `freee hr-approval-work-time create` | 勤務時間承認 작성 | ☐ |
-| 215 | `freee hr-approval-work-time update <id>` | 勤務時間承認 수정 | ☐ |
-| 216 | `freee hr-approval-work-time delete <id>` | 勤務時間承認 삭제 | ☐ |
-| 217 | `freee hr-approval-work-time action <id>` | 勤務時間 承認/却下 | ☐ |
-| **HR 承認経路** | | | |
-| 218 | `freee hr-approval-route list` | HR承認経路 목록 | ☐ |
-| 219 | `freee hr-approval-route show <id>` | HR承認経路 상세 | ☐ |
-| **HR ユーザー** | | | |
-| 220 | `freee hr-user me` | HR現在ユーザー情報 | ☐ |
-| **年末調整 (Year-End Adjustment)** | | | |
-| 221 | `freee hr-yearend employees` | 年末調整対象者 | ☐ |
-| 222 | `freee hr-yearend dependents <emp-id>` | 扶養控除 상세 | ☐ |
-| 223 | `freee hr-yearend housing-loans <emp-id>` | 住宅ローン控除 | ☐ |
-| 224 | `freee hr-yearend insurances <emp-id>` | 保険料控除 | ☐ |
-| 225 | `freee hr-yearend life-insurances <emp-id>` | 生命保険料控除 | ☐ |
-| 226 | `freee hr-yearend social-insurances <emp-id>` | 社会保険料控除 | ☐ |
-| 227 | `freee hr-yearend earthquake-insurances <emp-id>` | 地震保険料控除 | ☐ |
-| 228 | `freee hr-yearend payroll <emp-id>` | 給与所得 | ☐ |
-| 229 | `freee hr-yearend previous-jobs <emp-id>` | 前職情報 | ☐ |
-| 230 | `freee hr-yearend base <emp-id>` | 基本情報 | ☐ |
-| 231 | `freee hr-yearend status <emp-id>` | ステータス | ☐ |
-| 232 | `freee hr-yearend result <emp-id>` | 計算結果 | ☐ |
-| 233 | `freee hr-yearend summary` | 年末調整サマリー | ☐ |
-
-### Phase 6: Invoice API + PM API + Sales API (39 commands)
-
-| # | 명령어 | 설명 | 진행 |
-|---|--------|------|------|
-| **Invoice API (/iv)** | | | |
-| 234 | `freee iv-invoice list` | 請求書 목록 (Invoice API) | ☐ |
-| 235 | `freee iv-invoice show <id>` | 請求書 상세 | ☐ |
-| 236 | `freee iv-invoice create` | 請求書 작성 | ☐ |
-| 237 | `freee iv-invoice update <id>` | 請求書 수정 | ☐ |
-| 238 | `freee iv-invoice delete <id>` | 請求書 삭제 | ☐ |
-| 239 | `freee iv-quotation list` | 見積書 목록 (Invoice API) | ☐ |
-| 240 | `freee iv-quotation show <id>` | 見積書 상세 | ☐ |
-| 241 | `freee iv-quotation create` | 見積書 작성 | ☐ |
-| 242 | `freee iv-quotation update <id>` | 見積書 수정 | ☐ |
-| 243 | `freee iv-quotation delete <id>` | 見積書 삭제 | ☐ |
-| 244 | `freee iv-delivery list` | 納品書 목록 | ☐ |
-| 245 | `freee iv-delivery show <id>` | 납品서 상세 | ☐ |
-| 246 | `freee iv-delivery create` | 납품서 작성 | ☐ |
-| 247 | `freee iv-delivery update <id>` | 납품서 수정 | ☐ |
-| 248 | `freee iv-template list` | テンプレート 목록 | ☐ |
-| **PM API (/pm — 工数管理)** | | | |
-| 249 | `freee pm-project list` | プロジェクト 목록 | ☐ |
-| 250 | `freee pm-project show <id>` | プロジェクト 상세 | ☐ |
-| 251 | `freee pm-project create` | プロジェクト 등록 | ☐ |
-| 252 | `freee pm-project update <id>` | プロジェクト 수정 | ☐ |
-| 253 | `freee pm-workload list` | 工数 목록 | ☐ |
-| 254 | `freee pm-workload create` | 工数 등록 | ☐ |
-| 255 | `freee pm-workload update <id>` | 工数 수정 | ☐ |
-| 256 | `freee pm-workload delete <id>` | 工수 삭제 | ☐ |
-| 257 | `freee pm-team list` | チーム 목록 | ☐ |
-| 258 | `freee pm-team show <id>` | チーム 상세 | ☐ |
-| **Sales API (/sm — 販売管理)** | | | |
-| 259 | `freee sales-business list` | 案件 목록 | ☐ |
-| 260 | `freee sales-business show <id>` | 案件 상세 | ☐ |
-| 261 | `freee sales-business create` | 案件 등록 | ☐ |
-| 262 | `freee sales-business update <id>` | 案件 수정 | ☐ |
-| 263 | `freee sales-order list` | 受注 목록 | ☐ |
-| 264 | `freee sales-order show <id>` | 受注 상세 | ☐ |
-| 265 | `freee sales-order create` | 受注 등록 | ☐ |
-| 266 | `freee sales-order update <id>` | 受注 수정 | ☐ |
-| 267 | `freee sales-customer list` | 顧客 목록 | ☐ |
-| 268 | `freee sales-customer show <id>` | 顧客 상세 | ☐ |
-| 269 | `freee sales-product list` | 商品 목록 | ☐ |
-| 270 | `freee sales-product show <id>` | 商品 상세 | ☐ |
-| **メタ情報** | | | |
-| 271 | `freee api-resources` | 対応APIリソース一覧 | ☐ |
-| 272 | `freee forms selectables` | フォーム選択肢取得 | ☐ |
-
----
-
-## Usage 예시
-
-### 인증
+`freee` CLI는 freee API를 **셸 스크립트·CI/CD·AI 에이전트**에서 조작할 수 있는 단일 실행 파일을 제공한다.
 
 ```bash
-# 로그인 (브라우저가 열림)
-$ freee auth login
-✓ Logged in as taro@example.com
-✓ Default company: 株式会社サンプル (ID: 1234567)
+# 이번 달 미결제 거래를 CSV로 경리 담당자에게 전달
+freee deal list --status unsettled --format csv > unsettled-$(date +%Y%m).csv
 
-# 다른 계정으로 추가 로그인
-$ freee auth login --profile sub-account
+# 승인 대기 경비신청을 일괄 승인 (상급자가 실행)
+freee expense list --status pending --format json | \
+  jq -r '.[].id' | \
+  xargs -I{} freee expense action {} --action approve
 
-# 인증 목록
-$ freee auth list
-  PROFILE        USER                    COMPANY                STATUS
-✓ default        taro@example.com        株式会社サンプル        Active
-  sub-account    hanako@example.com      合同会社テスト          Active
+# 월별 P&L을 Slack에 게시 (CI cron)
+freee report pl --format json | jq '.net_income' | \
+  curl -s -X POST $SLACK_WEBHOOK -d "{\"text\":\"이번 달 순이익: $(cat -)엔\"}"
+```
+
+### freee-mcp와의 관계
+
+freee는 공식 MCP 서버(`freee/freee-mcp`)를 제공하지만, 이는 **AI 에이전트 전용**으로 셸 스크립트나 CI에서는 사용할 수 없다. 본 CLI는 전통적인 셸 도구로서 양쪽을 보완한다.
+
+---
+
+## 2. 설계 결정 (ADR)
+
+### ADR-1: SDK를 사용하지 않음
+
+| 항목 | 내용 |
+|------|------|
+| **결정** | 공식 SDK·커뮤니티 SDK를 사용하지 않고, OpenAPI 스펙을 참조하여 `net/http`로 직접 호출 |
+| **이유** | 공식 SDK는 archived. `LayerXcom/freee-go`는 API 변경에 대한 추적이 늦을 수 있음 |
+| **결과** | API 변경에 즉시 대응 가능, 의존성 제로, 바이너리 크기 최소화 |
+
+### ADR-2: OAuth2 Authorization Code + PKCE
+
+| 항목 | 내용 |
+|------|------|
+| **결정** | 브라우저 기반의 OAuth2 PKCE 플로우 |
+| **이유** | freee는 Client Credentials를 제공하지 않음. CI용은 `FREEE_TOKEN` 환경 변수로 대체 |
+| **주의점** | `scope=read write` 필수. `prompt=select_company`는 사용 금지(에러 원인). `AuthStyleInParams` 필수 |
+
+### ADR-3: 회계 기간(Fiscal Year)을 1등급 개념으로 취급
+
+| 항목 | 내용 |
+|------|------|
+| **결정** | `--fiscal-year <YYYY>` 글로벌 플래그를 제공. 기본값은 현재 회계 기간 |
+| **이유** | freee의 모든 데이터는 회계 기간에 귀속됨. 복수 기간에 걸친 처리는 일상적으로 발생 |
+| **예시** | `freee deal list --fiscal-year 2025`로 전기 거래 참조 |
+
+### ADR-4: 이름 해결 (Name Resolution)
+
+| 항목 | 내용 |
+|------|------|
+| **결정** | ID 플래그와 동등한 `--<resource>-name` 플래그를 제공하여 내부에서 ID로 변환 |
+| **이유** | 5년을 써도 거래처 ID는 외울 수 없음. `--partner-id 12345`보다 `--partner-name "주식회사A"`가 실용적 |
+| **구현** | list API로 완전 일치 검색 → 1건이면 그대로 사용, 복수 건이면 에러로 선택을 유도 |
+
+### ADR-5: 출력 스트림 분리
+
+| 항목 | 내용 |
+|------|------|
+| **결정** | 데이터는 stdout, 진행 상황/경고/에러는 stderr에 출력 |
+| **이유** | 파이프 처리에서 `| jq`가 항상 안전하게 동작함을 보장 |
+
+---
+
+## 3. 빠른 시작
+
+### 설치
+
+```bash
+# Homebrew (macOS/Linux)
+brew install planitaicojp/tap/freee
+
+# Go install
+go install github.com/planitaicojp/freee-cli@latest
+
+# 바이너리 직접 다운로드 (GitHub Releases)
+curl -fsSL https://github.com/planitaicojp/freee-cli/releases/latest/download/freee_linux_amd64.tar.gz | tar xz
+```
+
+### 5분 만에 첫 결과 얻기
+
+```bash
+# 1. 로그인 (브라우저가 열림)
+freee auth login
+
+# 2. 사업소 확인
+freee company list
+
+# 3. 이번 달 거래 목록
+freee deal list
+
+# 4. JSON으로 가져와 파이프 처리
+freee deal list --format json | jq '[.[].amount] | add'
+
+# 5. 경비신청 등록
+freee expense create \
+  --title "3월 출장 교통비" \
+  --amount 12500 \
+  --date 2026-03-15 \
+  --account-item-id 1234
+```
+
+---
+
+## 4. 인증
+
+### 앱 사전 준비
+
+1. [freee 앱 스토어](https://app.secure.freee.co.jp/developers)에서 앱을 등록
+2. Redirect URI에 `http://localhost:8080/callback`을 추가
+3. Client ID / Client Secret 취득 → `freee auth login` 실행 시 입력
+
+### 브라우저 로그인
+
+```bash
+# 기본 프로필로 로그인
+freee auth login
+
+# 다른 계정을 추가
+freee auth login --profile corp-b
+
+# 로그인 상태 확인
+freee auth status
+#   Profile:   default
+#   User:      taro@example.com
+#   Company:   주식회사 샘플 (ID: 1234567)
+#   Token:     Valid (expires in 45m)
+#   Fiscal:    2026 (2026-01-01 ~ 2026-12-31)
+
+# 프로필 목록
+freee auth list
+#   PROFILE      USER                  COMPANY              STATUS
+# ✓ default      taro@example.com      주식회사 샘플         Active
+#   corp-b       hanako@example.com    합동회사 테스트        Active
 
 # 프로필 전환
-$ freee auth switch sub-account
+freee auth switch corp-b
 
-# 현재 상태
-$ freee auth status
-Profile:     default
-User:        taro@example.com
-Company:     株式会社サンプル (ID: 1234567)
-Token:       Valid (expires in 45m)
+# 액세스 토큰만 출력 (스크립트용)
+freee auth token
 
-# 토큰 출력 (파이프/스크립트용)
-$ freee auth token
-eyJhbGci...
+# 로그아웃
+freee auth logout
 ```
 
-### 사업소 (Company)
+### CI/CD 환경에서의 인증
+
+브라우저를 사용할 수 없는 환경에서는 환경 변수로 인증한다:
 
 ```bash
-# 사업소 목록
-$ freee company list
-ID        NAME                    ROLE
-1234567   株式会社サンプル         admin
-2345678   合同会社テスト           member
+# GitHub Actions 예시
+env:
+  FREEE_TOKEN: ${{ secrets.FREEE_ACCESS_TOKEN }}
+  FREEE_COMPANY_ID: ${{ secrets.FREEE_COMPANY_ID }}
 
-# 사업소 전환
-$ freee company switch 2345678
-✓ Switched to 合同会社テスト
+# 또는 임시 토큰을 생성하여 export
+export FREEE_TOKEN=$(freee auth token)
+export FREEE_COMPANY_ID=1234567
 ```
 
-### 거래 (Deals)
+**토큰 관리 주의사항:**
+- 액세스 토큰의 유효 기간은 통상 24시간
+- CI에서는 secrets으로 관리하며 로그에 출력하지 않음 (`--quiet` 사용)
+- Refresh token은 `~/.config/freee/credentials.yaml` (권한 0600)에 저장됨
+
+---
+
+## 5. 글로벌 플래그
+
+모든 커맨드에서 사용 가능:
+
+| 플래그 | 환경 변수 | 기본값 | 설명 |
+|--------|----------|--------|------|
+| `--profile <name>` | `FREEE_PROFILE` | `default` | 사용할 프로필 |
+| `--company-id <id>` | `FREEE_COMPANY_ID` | 프로필 설정값 | 사업소 ID 오버라이드 |
+| `--fiscal-year <YYYY>` | `FREEE_FISCAL_YEAR` | 현재 회계 기간 | 회계 기간 지정 |
+| `--format <fmt>` | `FREEE_FORMAT` | `table` | 출력 형식: `table` / `json` / `yaml` / `csv` |
+| `--no-header` | — | false | 테이블 헤더 비표시 (스크립트용) |
+| `--quiet` / `-q` | — | false | 성공 시 출력 억제 |
+| `--verbose` | `FREEE_DEBUG=1` | false | HTTP 요청/응답 표시 |
+| `--no-input` | `FREEE_NO_INPUT=1` | false | 비대화형 모드 (확인 프롬프트 출력 안 함) |
+| `--dry-run` | — | false | 변경계 커맨드에서 API 호출 없이 요청 내용을 표시 |
+
+### 회계 기간 플래그 사용 예
 
 ```bash
-# 거래 목록 (기본: 이번 달)
-$ freee deal list
-ID       DATE        TYPE     PARTNER          AMOUNT      STATUS
-123456   2026-03-01  income   株式会社A        100,000     settled
-123457   2026-03-05  expense  B商事            50,000      unsettled
+# 전기 (2025년도)의 거래 참조
+freee deal list --fiscal-year 2025
 
-# 필터
-$ freee deal list --type expense --partner "B商事" --from 2026-01-01 --to 2026-03-31
+# 전기의 P&L 리포트
+freee report pl --fiscal-year 2025 --format json
 
-# 상세
-$ freee deal show 123456
+# 기본 회계 기간 변경 (config에 영구 저장)
+freee config set fiscal-year 2025
+```
 
-# JSON 출력 (agent-friendly)
-$ freee deal list --format json
+### 변경계 커맨드의 --dry-run
+
+```bash
+# 실제로는 생성하지 않고, 전송 예정인 JSON을 확인
+freee deal create --type expense --date 2026-03-10 \
+  --account-item-id 1234 --amount 5000 --dry-run
+
+# [dry-run] POST /api/1/deals
+# {
+#   "company_id": 1234567,
+#   "type": "expense",
+#   "issue_date": "2026-03-10",
+#   "details": [{"account_item_id": 1234, "amount": 5000}]
+# }
+```
+
+---
+
+## 6. 출력 명세
+
+### stdout / stderr 분리
+
+| 스트림 | 내용 |
+|--------|------|
+| `stdout` | 데이터 (JSON, Table, CSV, YAML) |
+| `stderr` | 진행 상황, 경고, 에러 메시지, `[dry-run]` 프리픽스 |
+
+### 형식별 보장
+
+| 형식 | list 반환값 | show 반환값 | 빈 목록 |
+|------|-----------|-----------|--------|
+| `table` | 헤더 + 행 | key-value 형식 | `(no results)` |
+| `json` | `[...]` 배열 | `{...}` 객체 | `[]` |
+| `csv` | 헤더 + 행 | — | 헤더만 |
+| `yaml` | `- ...` 리스트 | `key: value` | `[]` |
+
+### JSON 출력 보장
+
+- `--format json` 시 **항상 유효한 JSON만** stdout에 출력한다
+- API 응답의 래퍼는 **제거**한다 (예: `{"deals": [...]}` → `[...]`)
+- 숫자는 숫자형 (지수 표기 없음)
+- `jq`로 직접 파이프할 수 있음을 보장한다
+
+```bash
+# 항상 안전하게 파이프 가능
+freee deal list --format json | jq '.[0].id'
+freee partner show 12345 --format json | jq '.name'
+```
+
+### 테이블 출력 표시 규칙
+
+- 금액 열: 콤마 구분 (`1,234,567`)
+- 날짜 열: `YYYY-MM-DD` 형식
+- 상태: 영어 그대로 출력 (기계 처리를 위해)
+- 긴 문자열은 말줄임표로 생략 (`...`)
+
+---
+
+## 7. 에러 카탈로그
+
+### Exit Code
+
+| Code | 의미 | 예시 |
+|------|------|------|
+| `0` | 성공 | — |
+| `1` | 일반 에러 | 잘못된 인자 |
+| `2` | 인증 에러 | 토큰 만료, 미로그인 |
+| `3` | Not Found | 지정한 ID의 리소스가 존재하지 않음 |
+| `4` | 유효성 검사 에러 | 필수 플래그 미지정, 잘못된 날짜 형식 |
+| `5` | API 에러 | freee 서버가 에러를 반환함 |
+| `6` | 네트워크 에러 | 연결 실패, 타임아웃 |
+| `10` | 취소됨 | Ctrl+C |
+
+### 에러 메시지 형식
+
+```
+error: <메시지>
+hint:  <다음에 취할 액션>
+```
+
+예시:
+```
+error: authentication required
+hint:  run 'freee auth login' to authenticate
+
+error: deal 99999 not found
+hint:  run 'freee deal list' to see available deals
+
+error: invalid date format "2026/03/10"
+hint:  use YYYY-MM-DD format (e.g. 2026-03-10)
+
+error: API error [invalid_param]: partner_id is required
+hint:  run 'freee partner list' to find your partner ID
+```
+
+### 레이트 제한
+
+freee API에는 **1,000요청/10분** 제한이 있다.
+
+```
+error: rate limit exceeded
+hint:  waiting 47s (Retry-After header), then retrying...
+```
+
+CLI는 최대 3회 자동으로 재시도한다. `--all` 플래그 사용 시 특히 주의:
+
+```bash
+# 대량 데이터 취득 시 --limit으로 페이지당 건수를 조정
+freee deal list --all --limit 100  # 기본값: 50건/페이지
+```
+
+---
+
+## 8. 커맨드 레퍼런스
+
+### 범례
+
+- `<필수 인자>` / `[생략 가능 인자]`
+- 플래그는 모든 커맨드에서 글로벌 플래그와 함께 사용 가능
+- ID 대신 이름으로 지정할 수 있는 경우 `--<resource>-name` 플래그가 존재함
+
+---
+
+### 8.1 인증 (`auth`)
+
+```bash
+freee auth login [--profile <name>]        # OAuth2 브라우저 로그인
+freee auth logout [--profile <name>]       # 토큰 삭제
+freee auth status                          # 현재 인증 상태
+freee auth list                            # 전체 프로필 목록
+freee auth switch <profile>                # 프로필 전환
+freee auth remove <profile>                # 프로필 삭제
+freee auth token                           # 액세스 토큰 출력 (파이프용)
+```
+
+---
+
+### 8.2 설정 (`config`)
+
+```bash
+freee config show                          # 전체 설정 표시
+freee config set <key> <value>             # 설정 변경
+freee config path                          # 설정 파일 경로 표시
+```
+
+설정 가능한 키:
+
+| 키 | 설명 | 기본값 |
+|----|------|--------|
+| `default-profile` | 기본 프로필 | `default` |
+| `default-format` | 기본 출력 형식 | `table` |
+| `fiscal-year` | 기본 회계 기간 | 현재 기간 |
+| `timeout` | API 타임아웃 (초) | `30` |
+| `max-retries` | 최대 재시도 횟수 | `3` |
+
+---
+
+### 8.3 사업소 (`company`)
+
+```bash
+freee company list                         # 사업소 목록
+freee company show [<id>]                  # 사업소 상세 (생략 시 현재 사업소)
+freee company switch <id>                  # 기본 사업소 전환
+```
+
+```bash
+# 출력 예시
+$ freee company show
+ID:          1234567
+Name:        주식회사 샘플
+Role:        admin
+Phone:       03-1234-5678
+Address:     도쿄도 시부야구...
+Fiscal Year: 2026-01-01 ~ 2026-12-31
+```
+
+---
+
+### 8.4 거래 (`deal`)
+
+```bash
+freee deal list [flags]
+freee deal show <id>
+freee deal create [flags]
+freee deal update <id> [flags]
+freee deal delete <id>
+```
+
+**list 플래그:**
+
+| 플래그 | 설명 | 예시 |
+|--------|------|------|
+| `--type` | `income` 또는 `expense` | `--type expense` |
+| `--status` | `settled` / `unsettled` | `--status unsettled` |
+| `--from` | 시작일 (YYYY-MM-DD) | `--from 2026-01-01` |
+| `--to` | 종료일 (YYYY-MM-DD) | `--to 2026-03-31` |
+| `--partner-id` | 거래처 ID | `--partner-id 12345` |
+| `--partner-name` | 거래처명 (이름 해결) | `--partner-name "주식회사A"` |
+| `--all` | 전체 취득 (자동 페이지네이션) | `--all` |
+| `--limit` | 페이지당 건수 | `--limit 100` |
+
+**create/update 플래그:**
+
+| 플래그 | 설명 | 필수 여부 |
+|--------|------|----------|
+| `--type` | `income` / `expense` | create만 |
+| `--date` | 발생일 (YYYY-MM-DD) | create만 |
+| `--partner-id` | 거래처 ID | — |
+| `--partner-name` | 거래처명 (이름 해결) | — |
+| `--account-item-id` | 계정과목 ID | create만 |
+| `--amount` | 금액 (엔) | create만 |
+| `--tax-code` | 세금 구분 코드 | — |
+
+```bash
+# 이번 달 미결제 지출 전체를 CSV로 취득
+freee deal list --type expense --status unsettled \
+  --from 2026-03-01 --to 2026-03-31 \
+  --all --format csv > march-unsettled.csv
+
+# 거래 등록 (--dry-run으로 사전 확인)
+freee deal create \
+  --type expense \
+  --date 2026-03-15 \
+  --partner-name "B상사" \
+  --account-item-id 1234 \
+  --amount 50000 \
+  --tax-code 1 \
+  --dry-run
+
+# 거래 ID를 취득하여 이어서 처리
+DEAL_ID=$(freee deal create ... --format json --quiet | jq -r '.deal.id')
+freee deal payment create $DEAL_ID --amount 50000 --date 2026-03-20
+```
+
+---
+
+### 8.5 청구서 (`invoice`)
+
+```bash
+freee invoice list [flags]
+freee invoice show <id>
+freee invoice create [flags]
+freee invoice update <id> [flags]
+freee invoice delete <id>
+```
+
+**list 플래그:**
+
+| 플래그 | 설명 |
+|--------|------|
+| `--status` | `draft` / `applying` / `approved` / `remanded` / `rejected` / `canceled` / `sending` / `sent` / `overdue` / `settled` |
+| `--partner-id` | 거래처 ID |
+| `--partner-name` | 거래처명 (이름 해결) |
+| `--from` | 청구일 시작 |
+| `--to` | 청구일 종료 |
+| `--all` | 전체 취득 |
+
+```bash
+# 기한 초과 미수금 청구서 목록
+freee invoice list --status overdue --format json | \
+  jq '.[] | {id, partner: .partner_name, amount: .total_amount, due: .payment_date}'
+
+# 청구서 생성
+freee invoice create \
+  --partner-name "주식회사A" \
+  --title "2026년 3월분 컨설팅 비용" \
+  --date 2026-03-31 \
+  --due-date 2026-04-30 \
+  --item "컨설팅" \
+  --amount 500000
+```
+
+---
+
+### 8.6 거래처 (`partner`)
+
+```bash
+freee partner list [--all] [--format <fmt>]
+freee partner show <id>
+freee partner create [flags]
+freee partner update <id> [flags]
+freee partner delete <id>
+```
+
+**create/update 플래그:**
+
+| 플래그 | 설명 |
+|--------|------|
+| `--name` | 거래처명 (필수) |
+| `--code` | 거래처 코드 |
+| `--email` | 이메일 주소 |
+| `--phone` | 전화번호 |
+| `--contact-name` | 담당자명 |
+
+```bash
+# 거래처를 이름으로 검색
+freee partner list --format json | jq '.[] | select(.name | contains("샘플"))'
+
+# 거래처 등록
+freee partner create --name "신규 주식회사" --code "SHINKI001" --email "info@shinki.co.jp"
+```
+
+---
+
+### 8.7 계정과목 (`account`)
+
+```bash
+freee account list [--all] [--format <fmt>]
+freee account show <id>
+```
+
+```bash
+# 계정과목을 이름으로 검색
+freee account list --format json | jq '.[] | select(.name | contains("교통"))'
+```
+
+---
+
+### 8.8 부문 (`section`)
+
+```bash
+freee section list [--format <fmt>]
+freee section create --name <name> [--shortcut1 <s>] [--shortcut2 <s>]
+freee section update <id> [--name <name>] [--shortcut1 <s>] [--shortcut2 <s>]
+freee section delete <id>
+```
+
+---
+
+### 8.9 메모 태그 (`tag`)
+
+```bash
+freee tag list [--format <fmt>]
+freee tag create --name <name> [--shortcut1 <s>] [--shortcut2 <s>]
+freee tag update <id> [--name <name>]
+freee tag delete <id>
+```
+
+---
+
+### 8.10 품목 (`item`)
+
+```bash
+freee item list [--format <fmt>]
+freee item create --name <name>
+freee item update <id> [--name <name>]
+freee item delete <id>
+```
+
+---
+
+### 8.11 분개 (`journal`)
+
+```bash
+freee journal list [flags]           # 분개를 CSV/JSON으로 다운로드
+```
+
+| 플래그 | 설명 |
+|--------|------|
+| `--from` | 시작일 |
+| `--to` | 종료일 |
+| `--format` | `json` / `csv` |
+
+---
+
+### 8.12 경비신청 (`expense`)
+
+```bash
+freee expense list [flags]
+freee expense show <id>
+freee expense create [flags]
+freee expense update <id> [flags]
+freee expense delete <id>
+freee expense action <id> --action <approve|reject|cancel>  # Phase 4
+```
+
+**create/update 플래그:**
+
+| 플래그 | 설명 | 필수 여부 |
+|--------|------|----------|
+| `--title` | 신청 제목 | create만 |
+| `--amount` | 금액 | create만 |
+| `--date` | 발생일 | create만 |
+| `--account-item-id` | 계정과목 ID | create만 |
+| `--description` | 적요 | — |
+
+```bash
+# 내 승인 대기 경비신청 확인
+freee expense list --status pending --format table
+
+# 경비신청 등록 (영수증은 별도로 freee receipt create로 첨부)
+freee expense create \
+  --title "도쿄 출장 교통비" \
+  --amount 12500 \
+  --date 2026-03-15 \
+  --account-item-id 1234
+```
+
+---
+
+### 8.13 구좌 (`walletable`)
+
+```bash
+freee walletable list [--format <fmt>]
+freee walletable show <type> <id>
+```
+
+구좌 타입: `bank_account` / `credit_card` / `wallet` / `other`
+
+---
+
+### 8.14 유틸리티
+
+```bash
+freee version               # 버전 표시
+freee completion bash        # bash 자동완성 스크립트 생성
+freee completion zsh         # zsh 자동완성 스크립트 생성
+freee completion fish        # fish 자동완성 스크립트 생성
+```
+
+---
+
+## 9. 워크플로우 레시피
+
+### 9.1 월별 마감 처리
+
+월말에 경리 담당자가 실시하는 일반적인 절차:
+
+```bash
+#!/bin/bash
+# monthly-close.sh — 월별 마감 보조 스크립트
+YEAR=2026
+MONTH=03
+FROM="${YEAR}-${MONTH}-01"
+TO="${YEAR}-${MONTH}-31"
+
+echo "=== 미결제 거래 확인 ==="
+freee deal list --status unsettled --from $FROM --to $TO --format table
+
+echo ""
+echo "=== 승인 대기 경비신청 ==="
+freee expense list --status pending --format table
+
+echo ""
+echo "=== 이번 달 P&L 요약 ==="
+freee report pl --from $FROM --to $TO --format json | \
+  jq '{매출액: .revenue, 비용: .expenses, 순이익: .net_income}'
+```
+
+### 9.2 거래처별 월별 청구
+
+```bash
+#!/bin/bash
+# monthly-invoice.sh — 거래처 목록에서 월별 청구서 일괄 생성
+MONTH_LABEL="2026년 3월분"
+DUE_DATE="2026-04-30"
+
+freee partner list --format json | jq -r '.[] | select(.name | startswith("거래처")) | .id' | \
+while read partner_id; do
+  echo "Creating invoice for partner $partner_id..."
+  freee invoice create \
+    --partner-id "$partner_id" \
+    --title "${MONTH_LABEL} 월별 서비스 비용" \
+    --date "2026-03-31" \
+    --due-date "$DUE_DATE" \
+    --amount 100000 \
+    --quiet
+done
+echo "Done."
+```
+
+### 9.3 CI/CD에서의 월별 리포트 발송
+
+GitHub Actions로 매월 말에 P&L을 Slack에 알리는 예시:
+
+```yaml
+# .github/workflows/monthly-report.yml
+name: Monthly P&L Report
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'   # 매월 1일 09:00 JST
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install freee CLI
+        run: |
+          curl -fsSL https://github.com/planitaicojp/freee-cli/releases/latest/download/freee_linux_amd64.tar.gz | tar xz
+          sudo mv freee /usr/local/bin/
+
+      - name: Generate report
+        env:
+          FREEE_TOKEN: ${{ secrets.FREEE_ACCESS_TOKEN }}
+          FREEE_COMPANY_ID: ${{ secrets.FREEE_COMPANY_ID }}
+        run: |
+          LAST_MONTH=$(date -d "last month" +%Y-%m)
+          FROM="${LAST_MONTH}-01"
+          TO=$(date -d "${FROM} +1 month -1 day" +%Y-%m-%d)
+
+          NET_INCOME=$(freee report pl \
+            --from "$FROM" --to "$TO" \
+            --format json | jq '.net_income')
+
+          curl -s -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-type: application/json' \
+            -d "{\"text\":\"📊 ${LAST_MONTH} 월별 순이익: ${NET_INCOME} 엔\"}"
+```
+
+### 9.4 Line Messaging API와의 연동
+
+Line Pay 결제 → freee에 거래를 자동 등록하는 패턴:
+
+```bash
+# line-pay-webhook.sh — Line Pay webhook에서 호출되는 스크립트
+# 인자: $1=amount $2=partner_name $3=date
+AMOUNT=$1
+PARTNER_NAME=$2
+DATE=$3
+
+# 거래처 ID를 이름으로 해결
+PARTNER_ID=$(freee partner list --format json | \
+  jq -r ".[] | select(.name == \"$PARTNER_NAME\") | .id")
+
+if [ -z "$PARTNER_ID" ]; then
+  echo "거래처 '$PARTNER_NAME'를 찾을 수 없습니다. 신규 등록합니다..."
+  PARTNER_ID=$(freee partner create \
+    --name "$PARTNER_NAME" \
+    --format json | jq -r '.partner.id')
+fi
 
 # 거래 등록
-$ freee deal create \
-  --type expense \
-  --partner "B商事" \
-  --date 2026-03-10 \
-  --account "旅費交通費" \
-  --amount 5000 \
-  --tax-code 1
+DEAL_ID=$(freee deal create \
+  --type income \
+  --date "$DATE" \
+  --partner-id "$PARTNER_ID" \
+  --account-item-id "$SALES_ACCOUNT_ID" \
+  --amount "$AMOUNT" \
+  --format json | jq -r '.deal.id')
+
+echo "거래 #$DEAL_ID 등록 완료 (¥$AMOUNT / $PARTNER_NAME)"
 ```
 
-### 청구서 (Invoices)
+### 9.5 JSON 입력을 활용한 파이프라인 통합
+
+외부 시스템의 JSON 데이터를 freee에 직접 흘려보내는 패턴:
 
 ```bash
-$ freee invoice list --status draft
-$ freee invoice create \
-  --partner "株式会社A" \
-  --title "3月分請求書" \
-  --item "コンサルティング費" --amount 500000 \
-  --due-date 2026-04-30
-```
-
-### 글로벌 플래그
-
-```bash
-# 출력 형식 지정
-$ freee deal list --format json    # JSON (기본 agent 모드)
-$ freee deal list --format yaml    # YAML
-$ freee deal list --format csv     # CSV
-$ freee deal list --format table   # 테이블 (기본 human 모드)
-
-# 프로필 지정
-$ freee deal list --profile sub-account
-
-# 사업소 ID 직접 지정
-$ freee deal list --company-id 1234567
-
-# 비대화형 모드
-$ freee deal list --no-input
-
-# 디버그
-$ freee deal list --verbose
-$ FREEE_DEBUG=api freee deal list
-
-# 조용한 모드
-$ freee deal list --quiet
-```
-
-### CI/CD 활용 예
-
-```bash
-# 환경변수로 인증 (CI용)
-export FREEE_TOKEN="eyJhbGci..."
-export FREEE_COMPANY_ID="1234567"
-
-# 이번 달 경비 합계를 JSON으로 추출
-freee deal list --type expense --format json | jq '[.[].amount] | add'
-
-# 청구서 일괄 생성 (스크립트)
-cat partners.json | jq -r '.[] | .id' | while read id; do
-  freee invoice create --partner-id "$id" --title "月次請求" --amount 100000
-done
+# 외부 API의 주문 데이터를 거래로 일괄 등록
+curl -s https://api.external-shop.example/orders?date=2026-03-15 | \
+  jq -r '.orders[] | [.amount, .customer, .date] | @tsv' | \
+  while IFS=$'\t' read amount customer date; do
+    freee deal create \
+      --type income \
+      --date "$date" \
+      --partner-name "$customer" \
+      --account-item-id 5678 \
+      --amount "$amount" \
+      --no-input --quiet
+  done
 ```
 
 ---
 
-## Output Contract
+## 10. 설정 레퍼런스
 
-- `--format json`: stdout = JSON only, stderr = progress/warnings
-- `--format table`: stdout = table, stderr = warnings/notices
-- 모든 list 명령은 배열 반환 (빈 결과 = `[]`)
-- 모든 show 명령은 객체 반환
-- 에러 메시지는 항상 stderr
+### 파일 구성
+
+```
+~/.config/freee/
+├── config.yaml       # 프로필 설정 (0600)
+├── credentials.yaml  # OAuth 토큰 (0600)
+└── tokens.yaml       # 토큰 캐시 (0600)
+```
+
+### config.yaml 포맷
+
+```yaml
+default_profile: default
+default_format: table
+fiscal_year: 2026          # 생략 시 현재 회계 기간
+timeout: 30                # 초
+max_retries: 3
+
+profiles:
+  default:
+    company_id: 1234567
+    user: taro@example.com
+
+  corp-b:
+    company_id: 2345678
+    user: hanako@example.com
+```
+
+### 환경 변수 목록
+
+| 변수 | 설명 | 우선도 |
+|------|------|--------|
+| `FREEE_TOKEN` | 액세스 토큰 직접 지정 (CI용) | 최고 |
+| `FREEE_COMPANY_ID` | 사업소 ID 오버라이드 | 높음 |
+| `FREEE_PROFILE` | 사용할 프로필 | 높음 |
+| `FREEE_FISCAL_YEAR` | 회계 기간 | 높음 |
+| `FREEE_FORMAT` | 기본 출력 형식 | 중간 |
+| `FREEE_NO_INPUT` | 비대화형 모드 (`1`로 활성화) | 중간 |
+| `FREEE_DEBUG` | 디버그 출력 (`1`=verbose, `api`=HTTP 상세) | 낮음 |
+| `FREEE_CONFIG_DIR` | 설정 디렉터리 경로 | 낮음 |
 
 ---
 
-## 진행 현황 요약
+## 11. 진행 현황
 
-| Phase | 범위 | 명령어 수 | 완료 | 진행률 |
+### Phase 1: 기반 + Accounting API 핵심 (52개 커맨드)
+
+| # | 커맨드 | 설명 | 상태 |
+|---|--------|------|------|
+| **인증/설정** | | | |
+| 1 | `freee auth login` | OAuth2 브라우저 로그인 | ☑ |
+| 2 | `freee auth logout` | 토큰 삭제 | ☑ |
+| 3 | `freee auth status` | 인증 상태 표시 | ☑ |
+| 4 | `freee auth list` | 프로필 목록 | ☑ |
+| 5 | `freee auth switch <profile>` | 프로필 전환 | ☑ |
+| 6 | `freee auth remove <profile>` | 프로필 삭제 | ☑ |
+| 7 | `freee auth token` | 액세스 토큰 출력 | ☑ |
+| 8 | `freee config show` | 설정 표시 | ☑ |
+| 9 | `freee config set <key> <value>` | 설정 변경 | ☑ |
+| 10 | `freee config path` | 설정 파일 경로 출력 | ☑ |
+| **사업소** | | | |
+| 11 | `freee company list` | 사업소 목록 | ☑ |
+| 12 | `freee company show [id]` | 사업소 상세 | ☑ |
+| 13 | `freee company switch <id>` | 기본 사업소 전환 | ☑ |
+| **거래 (Deals)** | | | |
+| 14 | `freee deal list` | 거래 목록 | ☑ |
+| 15 | `freee deal show <id>` | 거래 상세 | ☑ |
+| 16 | `freee deal create` | 거래 등록 | ☑ |
+| 17 | `freee deal update <id>` | 거래 수정 | ☑ |
+| 18 | `freee deal delete <id>` | 거래 삭제 | ☑ |
+| **청구서 (Invoices)** | | | |
+| 19 | `freee invoice list` | 청구서 목록 | ☑ |
+| 20 | `freee invoice show <id>` | 청구서 상세 | ☑ |
+| 21 | `freee invoice create` | 청구서 작성 | ☑ |
+| 22 | `freee invoice update <id>` | 청구서 수정 | ☑ |
+| 23 | `freee invoice delete <id>` | 청구서 삭제 | ☑ |
+| **거래처 (Partners)** | | | |
+| 24 | `freee partner list` | 거래처 목록 | ☑ |
+| 25 | `freee partner show <id>` | 거래처 상세 | ☑ |
+| 26 | `freee partner create` | 거래처 등록 | ☑ |
+| 27 | `freee partner update <id>` | 거래처 수정 | ☑ |
+| 28 | `freee partner delete <id>` | 거래처 삭제 | ☑ |
+| **계정과목 (Account Items)** | | | |
+| 29 | `freee account list` | 계정과목 목록 | ☑ |
+| 30 | `freee account show <id>` | 계정과목 상세 | ☑ |
+| **부문 (Sections)** | | | |
+| 31 | `freee section list` | 부문 목록 | ☑ |
+| 32 | `freee section create` | 부문 등록 | ☑ |
+| 33 | `freee section update <id>` | 부문 수정 | ☑ |
+| 34 | `freee section delete <id>` | 부문 삭제 | ☑ |
+| **메모 태그 (Tags)** | | | |
+| 35 | `freee tag list` | 태그 목록 | ☑ |
+| 36 | `freee tag create` | 태그 등록 | ☑ |
+| 37 | `freee tag update <id>` | 태그 수정 | ☑ |
+| 38 | `freee tag delete <id>` | 태그 삭제 | ☑ |
+| **품목 (Items)** | | | |
+| 39 | `freee item list` | 품목 목록 | ☑ |
+| 40 | `freee item create` | 품목 등록 | ☑ |
+| 41 | `freee item update <id>` | 품목 수정 | ☑ |
+| 42 | `freee item delete <id>` | 품목 삭제 | ☑ |
+| **분개 (Journals)** | | | |
+| 43 | `freee journal list` | 분개 다운로드 | ☑ |
+| **경비신청 (Expenses)** | | | |
+| 44 | `freee expense list` | 경비신청 목록 | ☑ |
+| 45 | `freee expense show <id>` | 경비신청 상세 | ☑ |
+| 46 | `freee expense create` | 경비신청 작성 | ☑ |
+| 47 | `freee expense update <id>` | 경비신청 수정 | ☑ |
+| 48 | `freee expense delete <id>` | 경비신청 삭제 | ☑ |
+| **구좌 (Walletables)** | | | |
+| 49 | `freee walletable list` | 구좌 목록 | ☑ |
+| 50 | `freee walletable show <id>` | 구좌 상세 | ☑ |
+| **유틸리티** | | | |
+| 51 | `freee version` | 버전 표시 | ☑ |
+| 52 | `freee completion` | 셸 자동완성 생성 | ☑ |
+
+### Phase 2: Accounting 확장 — 분개장·이체·명세·세금 (19개 커맨드)
+
+| # | 커맨드 | 설명 | 상태 |
+|---|--------|------|------|
+| 53–57 | `freee manual-journal` CRUD | 분개장 (仕訳帳) | ☐ |
+| 58–62 | `freee transfer` CRUD | 이체 전표 (振替伝票) | ☐ |
+| 63–66 | `freee wallet-txn` CRUD | 구좌 명세 (口座明細) | ☐ |
+| 67–69 | `freee walletable` create/update/delete | 구좌 등록/수정/삭제 | ☐ |
+| 70–71 | `freee tax` list/show | 세금 구분 (税区分) | ☐ |
+
+### Phase 3: Accounting 확장 — 리포트 + 증빙 파일함 (25개 커맨드)
+
+| # | 커맨드 | 설명 | 상태 |
+|---|--------|------|------|
+| 72–86 | `freee report` bs/pl/cr (각 5패턴) | 재무제표 (BS·PL·CF) | ☐ |
+| 87–89 | `freee report` general-ledger/trial-bs/trial-pl | 총계정원장·잔액시산표 | ☐ |
+| 90–95 | `freee receipt` CRUD + download | 증빙 관리 | ☐ |
+| 96 | `freee bank list` | 은행 목록 | ☐ |
+
+### Phase 4: Accounting 확장 — 워크플로우 + 서브리소스 (44개 커맨드)
+
+| # | 커맨드 | 설명 | 상태 |
+|---|--------|------|------|
+| 97–102 | `freee approval` CRUD + action | 승인 의뢰 | ☐ |
+| 103–106 | `freee approval-form/route` | 승인 양식/경로 | ☐ |
+| 107–112 | `freee payment-request` CRUD + action | 지급 의뢰 | ☐ |
+| 113–117 | `freee expense-template` CRUD | 경비 템플릿 | ☐ |
+| 118 | `freee expense action` | 경비신청 승인/반려 | ☐ |
+| 119–124 | `freee deal payment/renew` | 거래 결제·갱신 | ☐ |
+| 125–126 | `freee quotation` list/show | 견적서 | ☐ |
+| 127–130 | `freee segment-tag` CRUD | 세그먼트 태그 | ☐ |
+| 131–135 | `freee code` account/section/item/tag/walletable upsert | 각종 코드 | ☐ |
+| 136–137 | `freee partner code` create/update | 거래처 코드 | ☐ |
+| 138–140 | `freee user` list/me/capabilities | 사용자 | ☐ |
+
+### Phase 5: HR API 전체 (93개 커맨드)
+
+| # | 커맨드 | 설명 | 상태 |
+|---|--------|------|------|
+| 141–145 | `freee hr-employee` CRUD | 직원 | ☐ |
+| 146–150 | `freee hr-work-record` CRUD | 근태 | ☐ |
+| 151–154 | `freee hr-time-clock` | 출퇴근 기록 | ☐ |
+| 155–159 | `freee hr-attendance-tag` CRUD | 소정 근무 태그 | ☐ |
+| 160–163 | `freee hr-salary/bonus` list/show | 급여·상여 명세 | ☐ |
+| 164–170 | `freee hr-group/position` CRUD | 그룹·직위 | ☐ |
+| 171–187 | `freee hr-employee <sub>` show/update | 직원 서브리소스 | ☐ |
+| 188–217 | `freee hr-approval-*` | HR 승인 워크플로우 (4종) | ☐ |
+| 218–219 | `freee hr-approval-route` | HR 승인 경로 | ☐ |
+| 220 | `freee hr-user me` | HR 사용자 정보 | ☐ |
+| 221–233 | `freee hr-yearend` | 연말정산 | ☐ |
+
+### Phase 6: Invoice API + PM API + Sales API (39개 커맨드)
+
+| # | 커맨드 | 설명 | 상태 |
+|---|--------|------|------|
+| 234–248 | `freee iv-invoice/iv-quotation/iv-delivery/iv-template` | Invoice API | ☐ |
+| 249–258 | `freee pm-project/pm-workload/pm-team` | PM (공수 관리) API | ☐ |
+| 259–270 | `freee sales-business/sales-order/sales-customer/sales-product` | Sales API | ☐ |
+| 271–272 | `freee api-resources`, `freee forms selectables` | 메타 정보 | ☐ |
+
+### 진행 상황 요약
+
+| Phase | 범위 | 커맨드 수 | 완료 | 진척도 |
 |-------|------|-----------|------|--------|
-| Phase 1 | 기반 + Accounting 핵심 | 52 | 39 | 75% |
-| Phase 2 | Accounting 仕訳・振替・明細・税 | 19 | 0 | 0% |
-| Phase 3 | Accounting レポート + ファイルボックス | 25 | 0 | 0% |
-| Phase 4 | Accounting ワークフロー + サブリソース | 44 | 0 | 0% |
+| Phase 1 | 기반 + Accounting 핵심 | 52 | **52** | **100%** |
+| Phase 2 | Accounting 분개·이체·명세·세금 | 19 | 0 | 0% |
+| Phase 3 | Accounting 리포트 + 증빙 파일함 | 25 | 0 | 0% |
+| Phase 4 | Accounting 워크플로우 + 서브리소스 | 44 | 0 | 0% |
 | Phase 5 | HR API 전체 | 93 | 0 | 0% |
-| Phase 6 | Invoice API + PM API + Sales API | 39 | 0 | 0% |
-| **합계** | | **272** | **39** | **14%** |
+| Phase 6 | Invoice / PM / Sales API | 39 | 0 | 0% |
+| **합계** | | **272** | **52** | **19%** |
 
 ---
 
-## 구현 순서 (Phase 1 내)
+## 12. 로드맵
 
-1. **프로젝트 초기화**: `go mod init`, Makefile, .goreleaser.yaml, cobra root
-2. **internal/config**: 프로필, 설정 파일 관리
-3. **internal/api**: HTTP 클라이언트, OAuth2 인증 플로우
-4. **internal/output**: JSON/YAML/CSV/Table 포매터
-5. **internal/errors**: 에러 타입, exit code
-6. **cmd/auth**: login, logout, status, list, switch, remove, token
-7. **cmd/company**: list, show, switch
-8. **cmd/deal**: list, show, create, update, delete
-9. **cmd/partner**: list, show, create, update, delete
-10. **cmd/invoice**: list, show, create, update, delete
-11. **cmd/account, section, tag, item**: CRUD
-12. **cmd/journal, expense, walletable**: 나머지 Accounting
-13. **cmd/version, completion**: 유틸리티
-14. **테스트, 문서, 릴리스**
+### v0.4.0 — 이름 해결 + 사용성 개선
+
+5년 사용자의 가장 큰 불만: **ID를 외워야 한다**.
+
+| # | 항목 | 설명 |
+|---|------|------|
+| 1 | `--partner-name` 이름 해결 | `--partner-id` 대신 이름으로 지정 |
+| 2 | `--account-name` 이름 해결 | 계정과목 이름으로 지정 |
+| 3 | `--fiscal-year` 글로벌 플래그 구현 | 회계 기간을 1등급 인자로 구현 |
+| 4 | 금액 콤마 포맷 | table 모드에서 `1,234,567` 형식 |
+| 5 | 상태 한국어 라벨 | `settled` → `결제완료` (table 모드만) |
+| 6 | `--no-header` 플래그 | 테이블 헤더 비표시 |
+| 7 | `freee schema <resource>` | JSON Schema 출력 (통합 개발용) |
+
+### v0.5.0 — Accounting 분개·이체·명세 (Phase 2, 19개 커맨드)
+
+```bash
+# 분개장 조작
+freee manual-journal list --from 2026-03-01 --to 2026-03-31
+freee manual-journal create --debit-account 매출 --credit-account 현금 --amount 100000
+
+# 이체 전표
+freee transfer create ...
+
+# 구좌 명세
+freee wallet-txn list --walletable-id 12345 --all
+```
+
+### v0.6.0 — 리포트 + 증빙 관리 (Phase 3, 25개 커맨드)
+
+재무제표 출력과 영수증 업로드를 추가. 증빙 관리는 경비신청의 실용성에 직결되므로 워크플로우(Phase 4)보다 먼저 구현한다.
+
+```bash
+# 월별 P&L
+freee report pl --from 2026-03-01 --to 2026-03-31 --format json
+
+# 영수증 업로드 → 경비신청에 연결
+freee receipt create --file receipt.jpg
+freee expense update 12345 --receipt-id <receipt_id>
+```
+
+### v0.7.0 — 승인 워크플로우 (Phase 4, 44개 커맨드)
+
+월별 업무에서 가장 중요한 승인 플로우.
+
+```bash
+# 경비신청 일괄 승인
+freee expense list --status pending --format json | \
+  jq -r '.[].id' | \
+  xargs -I{} freee expense action {} --action approve
+
+# 지급 의뢰 처리
+freee payment-request list --status draft
+freee payment-request action 12345 --action approve
+```
+
+### v0.8.0 — 배치 처리 + 감사 로그
+
+| # | 항목 | 설명 |
+|---|------|------|
+| 1 | `freee deal import --file txn.csv` | CSV 일괄 임포트 |
+| 2 | `freee invoice bulk-send` | 청구서 일괄 발송 |
+| 3 | `~/.local/share/freee/audit.log` | 변경계 조작의 감사 로그 |
+| 4 | `--idempotency-key` | 멱등 키 지원 (외부 연동 중복 방지) |
+
+### v0.9.0 — HR API (Phase 5, 93개 커맨드)
+
+```bash
+freee hr-employee list
+freee hr-work-record list --employee-id 123 --from 2026-03-01
+freee hr-time-clock create --type clock_in
+```
+
+### v1.0.0 — Invoice / PM / Sales API (Phase 6, 39개 커맨드)
+
+전체 272개 커맨드 구현 완료. GoReleaser를 통한 정식 릴리스.
 
 ---
 
-## Version History
+## 13. 버전 이력
 
-| Version | Date | Description |
-|---------|------|-------------|
-| 0.8.1 | TBD | メタ情報 + ドキュメント + GoReleaser 完了 |
-| 0.8.0 | TBD | Phase 6 — Invoice API + PM API + Sales API (39 commands) |
-| 0.7.3 | TBD | HR 年末調整 (13 commands) |
-| 0.7.2 | TBD | HR 承認ワークフロー (33 commands) |
-| 0.7.1 | TBD | HR 従業員ルール — サブリソース (17 commands) |
-| 0.7.0 | TBD | Phase 5 — HR 基本機能 (30 commands) |
-| 0.6.1 | TBD | Accounting マスター・コード操作 (14 commands) |
-| 0.6.0 | TBD | Phase 4 — Accounting ワークフロー + サブリソース (30 commands) |
-| 0.5.0 | TBD | Phase 3 — Accounting レポート + ファイルボックス (25 commands) |
-| 0.4.0 | TBD | Phase 2 — Accounting 仕訳・振替・明細 (19 commands) |
-| 0.3.0 | TBD | クライアント設定 + 出力改善 |
-| 0.2.2 | TBD | Phase 1 CRUD 完成（残り 13 コマンド） |
-| 0.2.1 | TBD | テスト + CI |
-| 0.2.0 | TBD | Agent 信頼性向上 |
-| 0.1.1 | 2026-03-10 | 出力改善、型付きモデル導入 |
-| 0.1.0 | 2026-03-10 | Phase 1 — 기반 + Accounting API |
+| 버전 | 날짜 | 내용 |
+|------|------|------|
+| **v0.3.0** | 2026-03-20 | Phase 1 전체 스텁 구현 + lint 에러 전체 수정 |
+| v0.2.1 | 2026-03-11 | 유닛 테스트 (api/errors/output) + GitHub Actions CI |
+| v0.2.0 | 2026-03-11 | Agent 신뢰성 향상 (`--all` 페이지네이션, Retry-After, 에러 힌트, `--dry-run`) |
+| v0.1.1 | 2026-03-10 | list/show 출력 개선 (typed models, key-value 포맷) |
+| v0.1.0 | 2026-03-10 | Phase 1 스캐폴딩, OAuth2 인증, 기본 커맨드 골격 |
 
-### 0.1.1 Changes
+### v0.3.0 변경 내용
 
-#### 問題点
+**구현:**
+- `deal update/delete` — PUT/DELETE API 호출 구현
+- `invoice update/delete` — 동일
+- `partner create/update/delete` — POST/PUT/DELETE 구현
+- `expense create/update/delete` — 동일
+- `section create/update/delete` — 동일
+- `tag create/update/delete` — 동일
+- `item update/delete` — 동일
 
-freee API のレスポンスはラッパーオブジェクトで包まれている（例: `{"company": {...}}`、`{"account_items": [...]}`）。
-v0.1.0 では `var resp any` で受け取っていたため：
+**품질:**
+- 전체 커맨드의 `fmt.Sscanf`를 `strconv.ParseInt`로 교체 (잘못된 ID 입력 에러 처리 추가)
+- `errcheck` lint 위반을 전체 파일에서 해소
+- Phase 1 진척도: 39/52 → **52/52 (100%)**
 
-- `--format table`（デフォルト）で `map[company:map[...]]` のような Go 内部表現が表示される
-- 数値が `1.2261605e+07` のような指数表記になる
-- list 系コマンドでテーブルヘッダーが出ない
+### v0.2.0 변경 내용
 
-#### 修正方針
+| # | 항목 | 상세 |
+|---|------|------|
+| 1 | `--all` 자동 페이지네이션 | offset/limit 루프로 전체 취득 |
+| 2 | 429 Retry-After 대응 | 서버 지정 대기 시간 파싱, 최대 3회 재시도 |
+| 3 | 에러 힌트 메시지 | 인증 에러 → `hint: run 'freee auth login'` 등 |
+| 4 | UserAgent에 버전 반영 | `planitaicojp/freee-cli/0.2.0` |
+| 5 | `--dry-run` 플래그 | 변경계 커맨드에서 요청 내용 프리뷰 |
 
-1. **型付きモデル導入** (`internal/model/`): API レスポンスに対応する Go 構造体を定義
-2. **show コマンドの key-value 出力**: `--format table` 時は `key: value` 形式で読みやすく表示
-3. **list コマンドのテーブル出力**: ラッパーを剥がして配列部分のみフォーマッタに渡す
+### v0.1.1 변경 내용
 
-#### 対象コマンド
+**문제:** freee API 응답은 래퍼 객체로 감싸진다 (`{"deals": [...]}`).
+v0.1.0에서는 `var resp any`로 받았기 때문에 table 출력이 `map[deals:map[...]]`이 되었다.
 
-| コマンド | 現状 | 修正後 |
-|----------|------|--------|
-| `company show` | `map[company:map[...]]` | key-value 形式（ID, Name, Role, Phone, Address 等） |
-| `company list` | 動作中（既に型あり） | 変更なし |
-| `account list` | `map[account_items:[...]]` | テーブル（ID, Name, Category, Tax Code） |
-| `item list` | `map[items:[...]]` | テーブル（ID, Name, Available） |
-| `section list` | `map[sections:[...]]` | テーブル（ID, Name） |
-| `tag list` | `map[tags:[...]]` | テーブル（ID, Name） |
-| `walletable list` | `map[walletables:[...]]` | テーブル（ID, Type, Name） |
-| `partner list` | `map[partners:[...]]` | テーブル（ID, Name, Code） |
-| `deal list` | `map[deals:[...]]` | テーブル（ID, Date, Type, Amount, Status） |
-| `invoice list` | `map[invoices:[...]]` | テーブル（ID, Number, Partner, Amount, Status） |
-| `expense list` | `map[expense_applications:[...]]` | テーブル（ID, Title, Amount, Status） |
-
-#### 新規ファイル
-
-| ファイル | 内容 |
-|----------|------|
-| `internal/model/company.go` | Company 構造体 |
-| `internal/model/account.go` | AccountItem 構造体 |
-| `internal/model/item.go` | Item 構造体 |
-| `internal/model/section.go` | Section 構造体 |
-| `internal/model/tag.go` | Tag 構造体 |
-| `internal/model/walletable.go` | Walletable 構造体 |
-| `internal/model/partner.go` | Partner 構造体 |
-| `internal/model/deal.go` | Deal 構造体 |
-| `internal/model/invoice.go` | Invoice 構造体 |
-| `internal/model/expense.go` | ExpenseApplication 構造体 |
-
-#### `company show` の出力例
-
-**修正前**:
-```
-map[company:map[amount_fraction:0 company_number:7305785747 ...]]
-```
-
-**修正後** (`--format table`、デフォルト):
-```
-ID:          12261605
-Name:        姜文喜
-Display:     姜 文喜
-Name Kana:   カンムンヒ
-Role:        admin
-Phone:       080-4209-1342
-Zipcode:     154-0002
-Address:     世田谷区下馬3-23-21 プレシス三軒茶屋204
-Fiscal Year: 2025-01-01 ~ 2025-12-31
-```
-
-**修正後** (`--format json`):
-```json
-{"company": {"id": 12261605, "name": "姜文喜", ...}}
-```
-（API レスポンスをそのまま出力）
-
-#### `account list` の出力例
-
-**修正前**:
-```
-map[account_items:[map[account_category:事業主借 ...] ...]]
-```
-
-**修正後**:
-```
-ID           NAME                        CATEGORY    TAX_CODE
-983573891    [確]一時収入                  事業主借      2
-983573893    [確]保険金補填（医療費）        事業主借      2
-```
-
-#### 修正ファイル
-
-| ファイル | 変更内容 |
-|----------|----------|
-| `cmd/company/company.go` | show で型付きモデル使用、key-value 出力 |
-| `cmd/account/account.go` | list/show でラッパー剥がし＋行構造体 |
-| `cmd/item/item.go` | 同上 |
-| `cmd/section/section.go` | 同上 |
-| `cmd/tag/tag.go` | 同上 |
-| `cmd/walletable/walletable.go` | 同上 |
-| `cmd/partner/partner.go` | 同上 |
-| `cmd/deal/deal.go` | 同上 |
-| `cmd/invoice/invoice.go` | 同上 |
-| `cmd/expense/expense.go` | 同上 |
+**수정:**
+- `internal/model/`에 typed struct 정의
+- `list` 커맨드: 래퍼를 제거하고 테이블 포매터에 전달
+- `show` 커맨드: key-value 형식으로 읽기 좋게 표시
 
 ---
 
-## Roadmap
-
-### v0.2.0 — Agent 신뢰성
-
-Agent (AI) が安全かつ確実に CLI を使えるようにするための改善。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | list 自動ページネーション | `--all` フラグ追加、offset/limit ループで全件取得 |
-| 2 | 429 Retry-After 対応 | naive sleep → サーバ指定の待機時間をパース |
-| 3 | エラーヒントメッセージ | 認証エラー → "run `freee auth login`" 等、次のアクション提示 |
-| 4 | UserAgent にバージョン反映 | `freee-cli/0.2.0` 形式で実バージョンを送信 |
-| 5 | `--dry-run` フラグ | 変更系コマンドでリクエスト内容をプレビュー（実行しない） |
-
-### v0.2.1 — テスト + CI
-
-品質保証の基盤整備。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `internal/api/client.go` ユニットテスト | `httptest.Server` によるモックテスト |
-| 2 | `internal/errors/` ユニットテスト | エラー型・exit code の検証 |
-| 3 | `internal/output/` ユニットテスト | JSON/YAML/CSV/Table 出力の検証 |
-| 4 | GitHub Actions CI | `.github/workflows/ci.yml` — build, test, lint |
-| 5 | Makefile coverage ターゲット | `make coverage` で `go test -cover` 実行 |
-
-### v0.2.2 — Phase 1 CRUD 完成
-
-残り 13 個のスタブコマンドを実装し、Phase 1 を 100% 完了にする。
-
-| コマンド | 説明 |
-|----------|------|
-| `deal update` | 取引更新 |
-| `invoice create` | 請求書作成 |
-| `invoice update` | 請求書更新 |
-| `partner create` | 取引先登録 |
-| `partner update` | 取引先更新 |
-| `expense create` | 経費申請作成 |
-| `expense update` | 経費申請更新 |
-| `section create` | 部門登録 |
-| `section update` | 部門更新 |
-| `tag create` | タグ登録 |
-| `tag update` | タグ更新 |
-| `item create` | 品目登録 |
-| `item update` | 品目更新 |
-
-### v0.3.0 — クライアント設定 + 出力改善
-
-CLI の使い勝手を向上させる設定項目と出力フォーマット改善。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | baseURL/timeout/maxRetries 設定 | 環境変数 + config.yaml で設定可能に |
-| 2 | 金額カンマフォーマット | table モードで `1,234,567` 形式表示 |
-| 3 | 日付フォーマット | table モードで読みやすい日付表示 |
-| 4 | ステータス日本語ラベル | `settled` → `決済済` 等の日本語変換 |
-| 5 | `--no-header` フラグ | テーブルヘッダー非表示（スクリプト向け） |
-| 6 | `--output-fields` フラグ | 出力カラムの選択指定 |
-
-### v0.4.0 — Accounting 仕訳・振替・明細 (Phase 2, 19 commands)
-
-Accounting API の仕訳帳・振替伝票・口座明細・税区分を網羅。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `manual-journal` CRUD (5) | 仕訳帳の一覧・詳細・登録・更新・削除 |
-| 2 | `transfer` CRUD (5) | 振替伝票の一覧・詳細・登録・更新・削除 |
-| 3 | `wallet-txn` CRUD (4) | 口座明細の一覧・詳細・登録・削除 |
-| 4 | `walletable` 拡張 (3) | 口座の登録・更新・削除 |
-| 5 | `tax` list/show (2) | 税区分の一覧・詳細 |
-
-### v0.5.0 — Accounting レポート + ファイルボックス (Phase 3, 25 commands)
-
-財務レポート（BS/PL/CR × 5パターン + 総勘定元帳 + 試算表）と証憑管理。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `report bs` / `bs-2y` / `bs-3y` / `bs-sections` / `bs-segments` | 貸借対照表 5パターン |
-| 2 | `report pl` / `pl-2y` / `pl-3y` / `pl-sections` / `pl-segments` | 損益計算書 5パターン |
-| 3 | `report cr` / `cr-2y` / `cr-3y` / `cr-sections` / `cr-segments` | キャッシュフロー 5パターン |
-| 4 | `report general-ledger` / `trial-bs` / `trial-pl` | 総勘定元帳 + 残高試算表 |
-| 5 | `receipt` CRUD + download (6) | 証憑の一覧・詳細・アップロード・更新・削除・ダウンロード |
-| 6 | `bank list` (1) | 銀行一覧 |
-
-### v0.6.0 — Accounting ワークフロー + サブリソース (Phase 4a, 30 commands)
-
-承認ワークフロー、支払依頼、経費テンプレート、取引サブリソース。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `approval` CRUD + action (6) | 承認依頼の一覧〜削除 + 承認/却下 |
-| 2 | `approval-form` / `approval-route` (4) | 承認フォーム・経路の一覧・詳細 |
-| 3 | `payment-request` CRUD + action (6) | 支払依頼の一覧〜削除 + 承認/却下 |
-| 4 | `expense-template` CRUD (5) | 経費テンプレートの一覧〜削除 |
-| 5 | `expense action` (1) | 経費申請の承認/却下 |
-| 6 | `deal payment` create/update/delete (3) | 取引決済サブリソース |
-| 7 | `deal renew` create/update/delete (3) | 取引更新行サブリソース |
-| 8 | `quotation` list/show (2) | 見積書の一覧・詳細 |
-
-### v0.6.1 — Accounting マスター・コード操作 (Phase 4b, 14 commands)
-
-セグメントタグ、各種コード操作、取引先コード、ユーザー情報。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `segment-tag` CRUD (4) | セグメントタグの一覧・登録・更新・削除 |
-| 2 | `code` upsert (5) | 勘定科目/部門/品目/タグ/口座コードの登録/更新 |
-| 3 | `partner code` create/update (2) | 取引先コードの登録・更新 |
-| 4 | `user` list/me/capabilities (3) | ユーザー情報・権限 |
-
-### v0.7.0 — HR 基本機能 (Phase 5a, 30 commands)
-
-HR API の基本リソース。Base URL: `/hr/api/v1/`
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | HR API クライアント | Base URL 切替、`hr-` prefix 命名規則 |
-| 2 | `hr-employee` CRUD (5) | 従業員の一覧〜削除 |
-| 3 | `hr-work-record` CRUD (5) | 勤怠の一覧〜削除 |
-| 4 | `hr-time-clock` (4) | 打刻の一覧・詳細・登録・可能種別 |
-| 5 | `hr-attendance-tag` CRUD (5) | 所定勤務タグ |
-| 6 | `hr-salary` / `hr-bonus` (4) | 給与・賞与明細 |
-| 7 | `hr-group` CRUD (4) | グループ |
-| 8 | `hr-position` (3) | 役職 |
-
-### v0.7.1 — HR 従業員ルール (Phase 5b, 17 commands)
-
-従業員のサブリソース（口座、基本給、扶養、保険等）の show/update。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `hr-employee bank-account` show/update | 振込先口座 |
-| 2 | `hr-employee basic-pay` show/update | 基本給 |
-| 3 | `hr-employee dependents` show/update | 扶養親族 |
-| 4 | `hr-employee health-insurance` show/update | 健康保険 |
-| 5 | `hr-employee welfare-pension` show/update | 厚生年金 |
-| 6 | `hr-employee profile` show/update | プロフィール |
-| 7 | `hr-employee work-record-summary` show | 勤怠サマリー |
-| 8 | `hr-employee tax-withholding` show | 源泉徴収 |
-| 9 | `hr-employee social-insurance` show/update | 社会保険 |
-| 10 | `hr-employee employment-insurance` show | 雇用保険 |
-
-### v0.7.2 — HR 承認ワークフロー (Phase 5c, 33 commands)
-
-5種の勤怠承認ワークフロー（各 CRUD + action）と承認経路。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `hr-approval-monthly` CRUD+action (6) | 月次勤怠承認 |
-| 2 | `hr-approval-overtime` CRUD+action (6) | 残業承認 |
-| 3 | `hr-approval-paid-leave` CRUD+action (6) | 有休承認 |
-| 4 | `hr-approval-special-leave` CRUD+action (6) | 特別休暇承認 |
-| 5 | `hr-approval-work-time` CRUD+action (6) | 勤務時間承認 |
-| 6 | `hr-approval-route` list/show (2) | HR承認経路 |
-| 7 | `hr-user me` (1) | HR現在ユーザー情報 |
-
-### v0.7.3 — HR 年末調整 (Phase 5d, 13 commands)
-
-年末調整（年調）関連の参照コマンド。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `hr-yearend employees` | 年末調整対象者一覧 |
-| 2 | `hr-yearend dependents` | 扶養控除 |
-| 3 | `hr-yearend housing-loans` | 住宅ローン控除 |
-| 4 | `hr-yearend insurances` | 保険料控除 |
-| 5 | `hr-yearend life-insurances` | 生命保険料控除 |
-| 6 | `hr-yearend social-insurances` | 社会保険料控除 |
-| 7 | `hr-yearend earthquake-insurances` | 地震保険料控除 |
-| 8 | `hr-yearend payroll` | 給与所得 |
-| 9 | `hr-yearend previous-jobs` | 前職情報 |
-| 10 | `hr-yearend base` / `status` / `result` / `summary` | 基本情報・ステータス・計算結果・サマリー |
-
-### v0.8.0 — Invoice + PM + Sales API (Phase 6, 39 commands)
-
-Accounting 以外の3つの API を一括実装。各 API は独立した Base URL を持つ。
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | Invoice API クライアント | Base URL: `/iv/api/v1/` — `iv-` prefix |
-| 2 | `iv-invoice` CRUD (5) | 請求書（Invoice API） |
-| 3 | `iv-quotation` CRUD (5) | 見積書（Invoice API） |
-| 4 | `iv-delivery` CRUD+list (5) | 納品書 |
-| 5 | `iv-template list` (1) | テンプレート一覧 |
-| 6 | PM API クライアント | Base URL: `/pm/api/v1/` — `pm-` prefix |
-| 7 | `pm-project` CRUD (4) | プロジェクト |
-| 8 | `pm-workload` CRUD (4) | 工数 |
-| 9 | `pm-team` list/show (2) | チーム |
-| 10 | Sales API クライアント | Base URL: `/sm/api/v1/` — `sales-` prefix |
-| 11 | `sales-business` CRUD (4) | 案件 |
-| 12 | `sales-order` CRUD (4) | 受注 |
-| 13 | `sales-customer` list/show (2) | 顧客 |
-| 14 | `sales-product` list/show (2) | 商品 |
-
-### v0.8.1 — メタ情報 + 完了
-
-| # | 項目 | 説明 |
-|---|------|------|
-| 1 | `api-resources` | 対応 API リソース一覧表示 |
-| 2 | `forms selectables` | フォーム選択肢取得 |
-| 3 | 全 API ドキュメント更新 | README + コマンドリファレンス |
-| 4 | GoReleaser 全プラットフォーム対応 | darwin/linux/windows × amd64/arm64 |
-
----
-
-## アーキテクチャノート
-
-### Multi-API Base URL
-
-freee は API ごとに異なる Base URL を使用する:
-
-| API | Base URL | CLI prefix |
-|-----|----------|------------|
-| Accounting | `https://api.freee.co.jp/api/1/` | (なし) |
-| HR | `https://api.freee.co.jp/hr/api/v1/` | `hr-` |
-| Invoice | `https://api.freee.co.jp/iv/api/v1/` | `iv-` |
-| PM | `https://api.freee.co.jp/pm/api/v1/` | `pm-` |
-| Sales | `https://api.freee.co.jp/sm/api/v1/` | `sales-` |
-
-`internal/api/client.go` で API 種別ごとに Base URL を切り替える。
-
-### ネーミング規則
-
-- **Accounting**: prefix なし（`freee deal`, `freee invoice`, `freee partner`）
-- **その他 API**: API prefix 付き（`freee hr-employee`, `freee iv-invoice`, `freee pm-project`）
-- **理由**: Accounting の `invoice` と Invoice API の `iv-invoice` は別リソース（前者は `/api/1/invoices`、後者は `/iv/api/v1/invoices`）
-
-### Sub-resource パターン
-
-親リソースの ID を引数に取るネストされたサブコマンド:
-
-```
-freee deal payment create <deal-id>           # 取引決済
-freee hr-employee bank-account show <emp-id>  # 従業員口座
-freee hr-yearend dependents <emp-id>          # 年末調整扶養
-```
-
-Cobra の `RunE` で `args[0]` を親 ID として取得する。
-
-### Action コマンド
-
-承認/却下などのアクションは `action` サブコマンドで統一:
-
-```
-freee approval action <id> --action approve
-freee hr-approval-monthly action <id> --action reject --comment "要修正"
-```
+*이 문서는 구현과 동기화하여 업데이트한다. SPEC과 구현이 어긋나는 경우 Issue를 등록할 것.*

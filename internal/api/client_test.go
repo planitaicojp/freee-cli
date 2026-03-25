@@ -79,7 +79,7 @@ func TestClient_Get_DecodesJSON(t *testing.T) {
 		if r.Method != "GET" {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		json.NewEncoder(w).Encode(map[string]string{"name": "test"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"name": "test"}) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -115,8 +115,10 @@ func TestClient_Post(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		json.NewEncoder(w).Encode(map[string]any{"id": 1, "received": body})
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "received": body}) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -140,7 +142,7 @@ func TestClient_Put(t *testing.T) {
 		if r.Method != "PUT" {
 			t.Errorf("expected PUT, got %s", r.Method)
 		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"}) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -176,7 +178,7 @@ func TestClient_Delete(t *testing.T) {
 func TestClient_Do_401ReturnsAuthError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
-		w.Write([]byte(`{"status_code":401,"errors":[{"type":"unauthorized","messages":["invalid token"]}]}`))
+		_, _ = w.Write([]byte(`{"status_code":401,"errors":[{"type":"unauthorized","messages":["invalid token"]}]}`)) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -196,7 +198,7 @@ func TestClient_Do_401ReturnsAuthError(t *testing.T) {
 func TestClient_Do_404ReturnsNotFoundError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`)) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -216,7 +218,7 @@ func TestClient_Do_404ReturnsNotFoundError(t *testing.T) {
 func TestClient_Do_400ReturnsAPIError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
-		w.Write([]byte(`{"status_code":400,"errors":[{"type":"invalid_param","messages":["amount is required"]}]}`))
+		_, _ = w.Write([]byte(`{"status_code":400,"errors":[{"type":"invalid_param","messages":["amount is required"]}]}`)) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -271,7 +273,7 @@ func TestParseAPIError_FreeeFormat(t *testing.T) {
 	body := `{"status_code":400,"errors":[{"type":"validation","messages":["field is required","invalid format"]}]}`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body)) //nolint:errcheck
 	}))
 	defer ts.Close()
 
@@ -296,7 +298,7 @@ func TestParseAPIError_FreeeFormat(t *testing.T) {
 func TestParseAPIError_NonFreeeFormat(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
-		w.Write([]byte(`Internal Server Error`))
+		_, _ = w.Write([]byte(`Internal Server Error`)) //nolint:errcheck
 	}))
 	defer ts.Close()
 

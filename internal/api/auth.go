@@ -112,7 +112,7 @@ func Login(clientID, clientSecret string) (*LoginResult, error) {
 			errCh <- err
 		}
 	}()
-	defer server.Shutdown(context.Background())
+	defer server.Shutdown(context.Background()) //nolint:errcheck
 
 	// PKCE (Proof Key for Code Exchange)
 	codeVerifier, codeChallenge := generatePKCE()

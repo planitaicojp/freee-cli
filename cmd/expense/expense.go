@@ -3,6 +3,7 @@ package expense
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -28,6 +29,16 @@ func init() {
 	listCmd.Flags().Int("limit", 50, "max number of results per page")
 	listCmd.Flags().Int("offset", 0, "offset for pagination")
 	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
+
+	createCmd.Flags().String("title", "", "expense title (required)")
+	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
+	createCmd.Flags().String("description", "", "description")
+	createCmd.Flags().Int64("account-item-id", 0, "account item ID")
+	createCmd.Flags().Int64("amount", 0, "amount")
+
+	updateCmd.Flags().String("title", "", "expense title")
+	updateCmd.Flags().String("date", "", "issue date YYYY-MM-DD")
+	updateCmd.Flags().String("description", "", "description")
 }
 
 var listCmd = &cobra.Command{
@@ -76,8 +87,10 @@ var showCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var id int64
-		fmt.Sscanf(args[0], "%d", &id)
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid expense application ID: %s", args[0])
+		}
 		freeeAPI := &api.FreeeAPI{Client: client}
 
 		format := cmdutil.GetFormat(cmd)
@@ -112,7 +125,49 @@ var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create an expense application",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("not yet implemented")
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		title, _ := cmd.Flags().GetString("title")
+		date, _ := cmd.Flags().GetString("date")
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+			"title":      title,
+			"issue_date": date,
+		}
+		if v, _ := cmd.Flags().GetString("description"); v != "" {
+			body["description"] = v
+		}
+
+		// Build expense lines if provided
+		accountItemID, _ := cmd.Flags().GetInt64("account-item-id")
+		amount, _ := cmd.Flags().GetInt64("amount")
+		if accountItemID != 0 || amount != 0 {
+			body["expense_application_lines"] = []map[string]any{
+				{
+					"account_item_id":         accountItemID,
+					"amount":                  amount,
+					"transaction_date":        date,
+					"description":             title,
+					"expense_application_id":  nil,
+				},
+			}
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/expense_applications")
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.CreateExpenseApplication(body, &resp); err != nil {
+			return err
+		}
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
 
@@ -121,7 +176,40 @@ var updateCmd = &cobra.Command{
 	Short: "Update an expense application",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf("not yet implemented")
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid expense application ID: %s", args[0])
+		}
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+		}
+		if v, _ := cmd.Flags().GetString("title"); v != "" {
+			body["title"] = v
+		}
+		if v, _ := cmd.Flags().GetString("date"); v != "" {
+			body["issue_date"] = v
+		}
+		if v, _ := cmd.Flags().GetString("description"); v != "" {
+			body["description"] = v
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] PUT /api/1/expense_applications/%d\n", id)
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.UpdateExpenseApplication(id, body, &resp); err != nil {
+			return err
+		}
+		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
 
@@ -130,8 +218,10 @@ var deleteCmd = &cobra.Command{
 	Short: "Delete an expense application",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var id int64
-		fmt.Sscanf(args[0], "%d", &id)
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid expense application ID: %s", args[0])
+		}
 
 		if cmdutil.IsDryRun(cmd) {
 			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/expense_applications/%d\n", id)

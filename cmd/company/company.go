@@ -3,6 +3,7 @@ package company
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -72,7 +73,11 @@ var showCmd = &cobra.Command{
 
 		companyID := client.CompanyID
 		if len(args) > 0 {
-			fmt.Sscanf(args[0], "%d", &companyID)
+			parsed, parseErr := strconv.ParseInt(args[0], 10, 64)
+			if parseErr != nil {
+				return fmt.Errorf("invalid company ID: %s", args[0])
+			}
+			companyID = parsed
 		}
 
 		freeeAPI := &api.FreeeAPI{Client: client}
@@ -133,8 +138,10 @@ var switchCmd = &cobra.Command{
 	Short: "Switch default company",
 	Args:  cmdutil.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var companyID int64
-		fmt.Sscanf(args[0], "%d", &companyID)
+		companyID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid company ID: %s", args[0])
+		}
 
 		profileName := "default"
 		if p, _ := cmd.Flags().GetString("profile"); p != "" {
