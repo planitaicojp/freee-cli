@@ -11,6 +11,7 @@ import (
 	"github.com/planitaicojp/freee-cli/internal/api"
 	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
+	"github.com/planitaicojp/freee-cli/internal/resolve"
 )
 
 var Cmd = &cobra.Command{
@@ -34,6 +35,8 @@ func init() {
 	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
 	createCmd.Flags().String("description", "", "description")
 	createCmd.Flags().Int64("account-item-id", 0, "account item ID")
+	createCmd.Flags().String("account-name", "", "account item name (resolves to account item ID)")
+	createCmd.Flags().String("account-item-name", "", "alias for --account-name")
 	createCmd.Flags().Int64("amount", 0, "amount")
 
 	updateCmd.Flags().String("title", "", "expense title")
@@ -130,6 +133,13 @@ var createCmd = &cobra.Command{
 			return err
 		}
 
+		freeeAPI := &api.FreeeAPI{Client: client}
+
+		accountItemID, err := resolve.AccountItemID(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
+
 		title, _ := cmd.Flags().GetString("title")
 		date, _ := cmd.Flags().GetString("date")
 
@@ -143,16 +153,15 @@ var createCmd = &cobra.Command{
 		}
 
 		// Build expense lines if provided
-		accountItemID, _ := cmd.Flags().GetInt64("account-item-id")
 		amount, _ := cmd.Flags().GetInt64("amount")
 		if accountItemID != 0 || amount != 0 {
 			body["expense_application_lines"] = []map[string]any{
 				{
-					"account_item_id":         accountItemID,
-					"amount":                  amount,
-					"transaction_date":        date,
-					"description":             title,
-					"expense_application_id":  nil,
+					"account_item_id":        accountItemID,
+					"amount":                 amount,
+					"transaction_date":       date,
+					"description":            title,
+					"expense_application_id": nil,
 				},
 			}
 		}
@@ -161,8 +170,6 @@ var createCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/expense_applications")
 			return output.New("json").Format(os.Stdout, body)
 		}
-
-		freeeAPI := &api.FreeeAPI{Client: client}
 		var resp any
 		if err := freeeAPI.CreateExpenseApplication(body, &resp); err != nil {
 			return err
