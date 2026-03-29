@@ -163,3 +163,145 @@ func TestPartnerID_NeitherFlag(t *testing.T) {
 		t.Errorf("got %d, want 0", id)
 	}
 }
+
+// --- AccountItemID tests ---
+
+func newAccountTestServer(items []map[string]any) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"account_items": items}) //nolint:errcheck
+	}))
+}
+
+func newAccountTestCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "test", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
+	cmd.Flags().Int64("account-item-id", 0, "account item ID")
+	cmd.Flags().String("account-name", "", "account name")
+	return cmd
+}
+
+func TestAccountItemID_ByID(t *testing.T) {
+	ts := newAccountTestServer(nil)
+	defer ts.Close()
+
+	cmd := newAccountTestCmd()
+	cmd.Flags().Set("account-item-id", "456")
+
+	id, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 456 {
+		t.Errorf("got %d, want 456", id)
+	}
+}
+
+func TestAccountItemID_ByName_ExactMatch(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(10), "name": "旅費交通費"},
+		{"id": float64(20), "name": "消耗品費"},
+	}
+	ts := newAccountTestServer(items)
+	defer ts.Close()
+
+	cmd := newAccountTestCmd()
+	cmd.Flags().Set("account-name", "旅費交通費")
+
+	id, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 10 {
+		t.Errorf("got %d, want 10", id)
+	}
+}
+
+func TestAccountItemID_ByName_PartialMatch(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(10), "name": "旅費交通費"},
+		{"id": float64(20), "name": "消耗品費"},
+	}
+	ts := newAccountTestServer(items)
+	defer ts.Close()
+
+	cmd := newAccountTestCmd()
+	cmd.Flags().Set("account-name", "交通")
+
+	id, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 10 {
+		t.Errorf("got %d, want 10", id)
+	}
+}
+
+func TestAccountItemID_ByName_MultipleMatch(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(10), "name": "旅費交通費"},
+		{"id": float64(20), "name": "消耗品費"},
+	}
+	ts := newAccountTestServer(items)
+	defer ts.Close()
+
+	cmd := newAccountTestCmd()
+	cmd.Flags().Set("account-name", "費")
+
+	_, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err == nil {
+		t.Fatal("expected error for multiple matches")
+	}
+	if ec, ok := err.(cerrors.ExitCoder); !ok || ec.ExitCode() != 4 {
+		t.Errorf("expected exit code 4, got %T: %v", err, err)
+	}
+}
+
+func TestAccountItemID_ByName_NotFound(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(10), "name": "旅費交通費"},
+	}
+	ts := newAccountTestServer(items)
+	defer ts.Close()
+
+	cmd := newAccountTestCmd()
+	cmd.Flags().Set("account-name", "存在しない科目")
+
+	_, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err == nil {
+		t.Fatal("expected error for not found")
+	}
+	if ec, ok := err.(cerrors.ExitCoder); !ok || ec.ExitCode() != 3 {
+		t.Errorf("expected exit code 3, got %T: %v", err, err)
+	}
+}
+
+func TestAccountItemID_BothFlags(t *testing.T) {
+	ts := newAccountTestServer(nil)
+	defer ts.Close()
+
+	cmd := newAccountTestCmd()
+	cmd.Flags().Set("account-item-id", "10")
+	cmd.Flags().Set("account-name", "test")
+
+	_, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err == nil {
+		t.Fatal("expected error for mutually exclusive flags")
+	}
+	if ec, ok := err.(cerrors.ExitCoder); !ok || ec.ExitCode() != 4 {
+		t.Errorf("expected exit code 4, got %T: %v", err, err)
+	}
+}
+
+func TestAccountItemID_NeitherFlag(t *testing.T) {
+	ts := newAccountTestServer(nil)
+	defer ts.Close()
+
+	cmd := newAccountTestCmd()
+
+	id, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 0 {
+		t.Errorf("got %d, want 0", id)
+	}
+}
