@@ -1077,11 +1077,23 @@ freee hr-time-clock create --type clock_in
 
 | 버전 | 날짜 | 내용 |
 |------|------|------|
-| **v0.3.0** | 2026-03-20 | Phase 1 전체 스텁 구현 + lint 에러 전체 수정 |
+| **v0.4.0** | 2026-03-29 | 이름 해결 (`--partner-name`, `--account-name`) + ADR-4 부분 일치 확장 |
+| v0.3.0 | 2026-03-20 | Phase 1 전체 스텁 구현 + lint 에러 전체 수정 |
 | v0.2.1 | 2026-03-11 | 유닛 테스트 (api/errors/output) + GitHub Actions CI |
 | v0.2.0 | 2026-03-11 | Agent 신뢰성 향상 (`--all` 페이지네이션, Retry-After, 에러 힌트, `--dry-run`) |
 | v0.1.1 | 2026-03-10 | list/show 출력 개선 (typed models, key-value 포맷) |
 | v0.1.0 | 2026-03-10 | Phase 1 스캐폴딩, OAuth2 인증, 기본 커맨드 골격 |
+
+### v0.4.0 변경 내용
+
+**이름 해결 (Name Resolution):**
+- `internal/resolve/` 패키지 신설 — `PartnerID()`, `AccountItemID()` 함수
+- `--partner-name` 플래그: deal create/update, invoice create/update
+- `--account-name` 플래그: deal create/update, expense create (`--account-item-name` alias)
+- 매칭 전략: 완전 일치 우선 (대소문자 무시), 부분 일치(contains) fallback
+- 에러 처리: mutually exclusive (exit 4), not found (exit 3), multiple match (exit 4 + 후보 목록)
+- ADR-4 업데이트: 부분 일치 fallback 전략 반영
+- 14개 유닛 테스트 (PartnerID 7개 + AccountItemID 7개)
 
 ### v0.3.0 변경 내용
 
