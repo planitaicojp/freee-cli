@@ -11,6 +11,14 @@ import (
 	"github.com/planitaicojp/freee-cli/internal/model"
 )
 
+// resolveNotFoundError is a not-found error with exit code 3 and clean message.
+type resolveNotFoundError struct {
+	message string
+}
+
+func (e *resolveNotFoundError) Error() string { return e.message }
+func (e *resolveNotFoundError) ExitCode() int { return cerrors.ExitNotFound }
+
 // PartnerID resolves a partner ID from --partner-id or --partner-name flags.
 // Returns (0, nil) if neither flag is set.
 func PartnerID(cmd *cobra.Command, freeeAPI *api.FreeeAPI, companyID int64) (int64, error) {
@@ -85,9 +93,8 @@ func matchByName(name string, partners []model.Partner, resource string) (int64,
 		return 0, multipleMatchError(resource, name, partialMatches, false)
 	}
 
-	return 0, &cerrors.NotFoundError{
-		Resource: resource,
-		ID:       fmt.Sprintf("no %s found matching %q\nhint: run 'freee %s list' to see available %ss", resource, name, resource, resource),
+	return 0, &resolveNotFoundError{
+		message: fmt.Sprintf("no %s found matching %q\nhint: run 'freee %s list' to see available %ss", resource, name, resource, resource),
 	}
 }
 
@@ -164,9 +171,8 @@ func matchAccountItemByName(name string, items []model.AccountItem, resource str
 		return 0, multipleAccountMatchError(resource, name, partialMatches, false)
 	}
 
-	return 0, &cerrors.NotFoundError{
-		Resource: resource,
-		ID:       fmt.Sprintf("no %s found matching %q\nhint: run 'freee account list' to see available account items", resource, name),
+	return 0, &resolveNotFoundError{
+		message: fmt.Sprintf("no %s found matching %q\nhint: run 'freee account list' to see available account items", resource, name),
 	}
 }
 
