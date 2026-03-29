@@ -7,7 +7,9 @@ import (
 	"reflect"
 )
 
-type CSVFormatter struct{}
+type CSVFormatter struct {
+	Options Options
+}
 
 func (f *CSVFormatter) Format(w io.Writer, data any) error {
 	val := reflect.ValueOf(data)

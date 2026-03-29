@@ -8,7 +8,9 @@ import (
 	"text/tabwriter"
 )
 
-type TableFormatter struct{}
+type TableFormatter struct {
+	Options Options
+}
 
 func (f *TableFormatter) Format(w io.Writer, data any) error {
 	val := reflect.ValueOf(data)
