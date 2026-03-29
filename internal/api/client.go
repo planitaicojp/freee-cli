@@ -23,9 +23,10 @@ const (
 
 // Client is the HTTP client for freee API.
 type Client struct {
-	HTTP      *http.Client
-	Token     string
-	CompanyID int64
+	HTTP            *http.Client
+	Token           string
+	CompanyID       int64
+	baseURLOverride string // for testing only
 }
 
 // NewClient creates a new API client.
@@ -39,7 +40,15 @@ func NewClient(token string, companyID int64) *Client {
 
 // BaseURL returns the freee API base URL.
 func (c *Client) BaseURL() string {
+	if c.baseURLOverride != "" {
+		return c.baseURLOverride
+	}
 	return baseURL
+}
+
+// SetBaseURL overrides the base URL (for testing).
+func (c *Client) SetBaseURL(url string) {
+	c.baseURLOverride = url
 }
 
 // Do executes an HTTP request with auth headers and error handling.

@@ -11,6 +11,7 @@ import (
 	"github.com/planitaicojp/freee-cli/internal/api"
 	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
+	"github.com/planitaicojp/freee-cli/internal/resolve"
 )
 
 // Cmd is the deal command group.
@@ -48,6 +49,13 @@ func init() {
 	updateCmd.Flags().Int64("account-item-id", 0, "account item ID")
 	updateCmd.Flags().Int64("amount", 0, "amount")
 	updateCmd.Flags().Int64("tax-code", 0, "tax code")
+
+	createCmd.Flags().String("partner-name", "", "partner name (resolves to partner ID)")
+	updateCmd.Flags().String("partner-name", "", "partner name (resolves to partner ID)")
+	createCmd.Flags().String("account-name", "", "account item name (resolves to account item ID)")
+	createCmd.Flags().String("account-item-name", "", "alias for --account-name")
+	updateCmd.Flags().String("account-name", "", "account item name (resolves to account item ID)")
+	updateCmd.Flags().String("account-item-name", "", "alias for --account-name")
 }
 
 var listCmd = &cobra.Command{
@@ -186,12 +194,24 @@ var createCmd = &cobra.Command{
 			return err
 		}
 
+		freeeAPI := &api.FreeeAPI{Client: client}
+
 		dealType, _ := cmd.Flags().GetString("type")
 		date, _ := cmd.Flags().GetString("date")
-		accountItemID, _ := cmd.Flags().GetInt64("account-item-id")
 		amount, _ := cmd.Flags().GetInt64("amount")
 		taxCode, _ := cmd.Flags().GetInt64("tax-code")
-		partnerID, _ := cmd.Flags().GetInt64("partner-id")
+
+		// Resolve partner (name → ID)
+		partnerID, err := resolve.PartnerID(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
+
+		// Resolve account item (name → ID)
+		accountItemID, err := resolve.AccountItemID(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
 
 		body := map[string]any{
 			"company_id": client.CompanyID,
@@ -214,12 +234,10 @@ var createCmd = &cobra.Command{
 			return output.New("json").Format(os.Stdout, body)
 		}
 
-		freeeAPI := &api.FreeeAPI{Client: client}
 		var resp any
 		if err := freeeAPI.CreateDeal(body, &resp); err != nil {
 			return err
 		}
-
 		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
 	},
 }
@@ -239,6 +257,14 @@ var updateCmd = &cobra.Command{
 			return fmt.Errorf("invalid deal ID: %s", args[0])
 		}
 
+		freeeAPI := &api.FreeeAPI{Client: client}
+
+		// Resolve partner (name → ID)
+		partnerID, err := resolve.PartnerID(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
+
 		body := map[string]any{
 			"company_id": client.CompanyID,
 		}
@@ -248,14 +274,16 @@ var updateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("date"); v != "" {
 			body["issue_date"] = v
 		}
-		if cmd.Flags().Changed("partner-id") {
-			v, _ := cmd.Flags().GetInt64("partner-id")
-			body["partner_id"] = v
+		if partnerID != 0 {
+			body["partner_id"] = partnerID
 		}
-		if cmd.Flags().Changed("account-item-id") || cmd.Flags().Changed("amount") || cmd.Flags().Changed("tax-code") {
-			accountItemID, _ := cmd.Flags().GetInt64("account-item-id")
+		if cmd.Flags().Changed("account-item-id") || cmd.Flags().Changed("account-name") || cmd.Flags().Changed("account-item-name") || cmd.Flags().Changed("amount") || cmd.Flags().Changed("tax-code") {
+			accountItemID, err := resolve.AccountItemID(cmd, freeeAPI, client.CompanyID)
+			if err != nil {
+				return err
+			}
 			if accountItemID == 0 {
-				return fmt.Errorf("--account-item-id is required when updating deal details")
+				return fmt.Errorf("--account-item-id or --account-name is required when updating deal details")
 			}
 			amount, _ := cmd.Flags().GetInt64("amount")
 			taxCode, _ := cmd.Flags().GetInt64("tax-code")
@@ -273,7 +301,6 @@ var updateCmd = &cobra.Command{
 			return output.New("json").Format(os.Stdout, body)
 		}
 
-		freeeAPI := &api.FreeeAPI{Client: client}
 		var resp any
 		if err := freeeAPI.UpdateDeal(dealID, body, &resp); err != nil {
 			return err

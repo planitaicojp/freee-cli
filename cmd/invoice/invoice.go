@@ -11,6 +11,7 @@ import (
 	"github.com/planitaicojp/freee-cli/internal/api"
 	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
+	"github.com/planitaicojp/freee-cli/internal/resolve"
 )
 
 var Cmd = &cobra.Command{
@@ -32,12 +33,14 @@ func init() {
 	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
 
 	createCmd.Flags().Int64("partner-id", 0, "partner ID (required)")
+	createCmd.Flags().String("partner-name", "", "partner name (resolves to partner ID)")
 	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
 	createCmd.Flags().String("due-date", "", "due date YYYY-MM-DD")
 	createCmd.Flags().String("title", "", "invoice title")
 	createCmd.Flags().String("description", "", "description")
 
 	updateCmd.Flags().Int64("partner-id", 0, "partner ID")
+	updateCmd.Flags().String("partner-name", "", "partner name (resolves to partner ID)")
 	updateCmd.Flags().String("date", "", "issue date YYYY-MM-DD")
 	updateCmd.Flags().String("due-date", "", "due date YYYY-MM-DD")
 	updateCmd.Flags().String("title", "", "invoice title")
@@ -144,8 +147,12 @@ var createCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		freeeAPI := &api.FreeeAPI{Client: client}
 
-		partnerID, _ := cmd.Flags().GetInt64("partner-id")
+		partnerID, err := resolve.PartnerID(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
 		date, _ := cmd.Flags().GetString("date")
 
 		body := map[string]any{
@@ -168,7 +175,6 @@ var createCmd = &cobra.Command{
 			return output.New("json").Format(os.Stdout, body)
 		}
 
-		freeeAPI := &api.FreeeAPI{Client: client}
 		var resp any
 		if err := freeeAPI.CreateInvoice(body, &resp); err != nil {
 			return err
@@ -191,13 +197,17 @@ var updateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid invoice ID: %s", args[0])
 		}
+		freeeAPI := &api.FreeeAPI{Client: client}
 
 		body := map[string]any{
 			"company_id": client.CompanyID,
 		}
-		if cmd.Flags().Changed("partner-id") {
-			v, _ := cmd.Flags().GetInt64("partner-id")
-			body["partner_id"] = v
+		partnerID, err := resolve.PartnerID(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
+		if partnerID != 0 {
+			body["partner_id"] = partnerID
 		}
 		if v, _ := cmd.Flags().GetString("date"); v != "" {
 			body["issue_date"] = v
@@ -217,7 +227,6 @@ var updateCmd = &cobra.Command{
 			return output.New("json").Format(os.Stdout, body)
 		}
 
-		freeeAPI := &api.FreeeAPI{Client: client}
 		var resp any
 		if err := freeeAPI.UpdateInvoice(invoiceID, body, &resp); err != nil {
 			return err
