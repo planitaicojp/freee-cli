@@ -166,3 +166,49 @@ func TestTableFormatter_NonSlice(t *testing.T) {
 		t.Errorf("expected string output, got %q", buf.String())
 	}
 }
+
+type amountRow struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Amount int64  `json:"amount"`
+	Tax    int    `json:"tax_code"`
+}
+
+func TestTableFormatter_AmountCommaFormat(t *testing.T) {
+	var buf bytes.Buffer
+	f := &TableFormatter{}
+	data := []amountRow{{ID: 12345, Name: "Test", Amount: 1234567, Tax: 101}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "1,234,567") {
+		t.Errorf("expected comma-formatted amount, got: %s", out)
+	}
+	if strings.Contains(out, "12,345") {
+		t.Errorf("ID should not be comma-formatted, got: %s", out)
+	}
+}
+
+func TestFormatAmount(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0"},
+		{123, "123"},
+		{1234, "1,234"},
+		{1234567, "1,234,567"},
+		{-1234567, "-1,234,567"},
+		{-100, "-100"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d", tt.input), func(t *testing.T) {
+			got := formatAmount(tt.input)
+			if got != tt.want {
+				t.Errorf("formatAmount(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
