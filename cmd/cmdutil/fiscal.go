@@ -70,12 +70,25 @@ func findClosingMonth(fiscalYears []model.FiscalYear, year int) (int, error) {
 		}
 	}
 
-	last := fiscalYears[len(fiscalYears)-1]
-	month, err := closingMonthFromEndDate(last.EndDate)
-	if err != nil {
-		return 0, fmt.Errorf("cannot parse fiscal year end date: %s", last.EndDate)
+	// Fallback: find the most recent fiscal year by EndDate (API order not guaranteed)
+	var mostRecentFY model.FiscalYear
+	var mostRecentEnd time.Time
+	found := false
+	for _, fy := range fiscalYears {
+		end, err := time.Parse("2006-01-02", fy.EndDate)
+		if err != nil {
+			continue
+		}
+		if !found || end.After(mostRecentEnd) {
+			mostRecentEnd = end
+			mostRecentFY = fy
+			found = true
+		}
 	}
-	return month, nil
+	if !found {
+		return 0, fmt.Errorf("no valid fiscal years found to determine closing month")
+	}
+	return closingMonthFromEndDate(mostRecentFY.EndDate)
 }
 
 func closingMonthFromEndDate(endDate string) (int, error) {

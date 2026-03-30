@@ -137,8 +137,12 @@ func matchByName[T Named](name string, items []T, resource, idFlag string) (int6
 		return 0, multipleMatchError(resource, name, partialMatches, false, idFlag)
 	}
 
+	listCmd := resource
+	if resource == "account-item" {
+		listCmd = "account"
+	}
 	return 0, &resolveNotFoundError{
-		message: fmt.Sprintf("no %s found matching %q\nhint: run 'freee %s list' to see available %ss", resource, name, resource, resource),
+		message: fmt.Sprintf("no %s found matching %q\nhint: run 'freee %s list' to see available %ss", resource, name, listCmd, resource),
 	}
 }
 
