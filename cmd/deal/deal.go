@@ -42,6 +42,10 @@ func init() {
 	createCmd.Flags().Int64("account-item-id", 0, "account item ID (required)")
 	createCmd.Flags().Int64("amount", 0, "amount (required)")
 	createCmd.Flags().Int64("tax-code", 0, "tax code")
+	_ = createCmd.MarkFlagRequired("type")
+	_ = createCmd.MarkFlagRequired("date")
+	_ = createCmd.MarkFlagRequired("account-item-id")
+	_ = createCmd.MarkFlagRequired("amount")
 
 	updateCmd.Flags().String("type", "", "deal type: income or expense")
 	updateCmd.Flags().String("date", "", "issue date YYYY-MM-DD")

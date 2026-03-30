@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/pflag"
 
 	cerrors "github.com/planitaicojp/freee-cli/internal/errors"
+	"github.com/planitaicojp/freee-cli/internal/output"
 )
 
 // schemaNotFoundError is a command lookup error with exit code 3.
@@ -188,18 +189,30 @@ func buildCommandPath(root *cobra.Command, args []string) string {
 
 // outputCommandList renders a command listing.
 func outputCommandList(w io.Writer, format string, items []CommandListItem) error {
-	if format == "json" {
+	switch format {
+	case "json":
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(CommandList{Commands: items})
+	case "yaml", "csv":
+		return output.New(format).Format(w, items)
+	default:
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "NAME\tDESCRIPTION")
+		for _, item := range items {
+			fmt.Fprintf(tw, "%s\t%s\n", item.Name, item.Description)
+		}
+		return tw.Flush()
 	}
+}
 
-	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tDESCRIPTION")
-	for _, item := range items {
-		fmt.Fprintf(tw, "%s\t%s\n", item.Name, item.Description)
-	}
-	return tw.Flush()
+// FlagSchemaRow is a display-friendly row for table/CSV/YAML output.
+type FlagSchemaRow struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Required    string `json:"required"`
+	Default     string `json:"default"`
+	Description string `json:"description"`
 }
 
 // outputFlagSchema renders a flag schema.
@@ -208,6 +221,24 @@ func outputFlagSchema(w io.Writer, format string, schema CommandSchema, showGlob
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(schema)
+	}
+
+	if format == "yaml" || format == "csv" {
+		rows := make([]FlagSchemaRow, len(schema.Flags))
+		for i, f := range schema.Flags {
+			req := "no"
+			if f.Required {
+				req = "yes"
+			}
+			rows[i] = FlagSchemaRow{
+				Name:        f.Name,
+				Type:        f.Type,
+				Required:    req,
+				Default:     f.Default,
+				Description: f.Description,
+			}
+		}
+		return output.New(format).Format(w, rows)
 	}
 
 	// Table format

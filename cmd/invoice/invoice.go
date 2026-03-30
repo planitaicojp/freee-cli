@@ -37,6 +37,7 @@ func init() {
 	createCmd.Flags().Int64("partner-id", 0, "partner ID (required)")
 	createCmd.Flags().String("partner-name", "", "partner name (resolves to partner ID)")
 	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
+	_ = createCmd.MarkFlagRequired("date")
 	createCmd.Flags().String("due-date", "", "due date YYYY-MM-DD")
 	createCmd.Flags().String("title", "", "invoice title")
 	createCmd.Flags().String("description", "", "description")

@@ -249,3 +249,51 @@ func TestSchemaNotFound(t *testing.T) {
 		t.Fatal("expected error for nonexistent command")
 	}
 }
+
+func TestShowGlobal_Integration(t *testing.T) {
+	buf, err := executeSchema("deal", "create", "--show-global", "--format", "json")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var schema CommandSchema
+	if err := json.Unmarshal(buf.Bytes(), &schema); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, f := range schema.Flags {
+		names[f.Name] = true
+	}
+	if !names["format"] {
+		t.Error("expected global flag 'format' with --show-global")
+	}
+	if !names["profile"] {
+		t.Error("expected global flag 'profile' with --show-global")
+	}
+	if !names["type"] {
+		t.Error("expected local flag 'type' with --show-global")
+	}
+}
+
+func TestSchemaOutput_YAML(t *testing.T) {
+	buf, err := executeSchema("deal", "--format", "yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "name: create") && !strings.Contains(out, "name: list") {
+		t.Errorf("expected YAML output with command names, got: %s", out)
+	}
+}
+
+func TestSchemaOutput_CSV(t *testing.T) {
+	buf, err := executeSchema("deal", "--format", "csv")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "name,description") {
+		t.Errorf("expected CSV headers, got: %s", out)
+	}
+}
