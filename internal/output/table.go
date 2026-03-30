@@ -74,6 +74,9 @@ func formatValue(v reflect.Value, jsonTag string) string {
 	if (v.Kind() == reflect.Int || v.Kind() == reflect.Int64) && !isIDOrCode {
 		return formatAmount(v.Int())
 	}
+	if v.Kind() == reflect.String && tagName == "status" {
+		return StatusLabel(v.String())
+	}
 	return fmt.Sprintf("%v", v.Interface())
 }
 

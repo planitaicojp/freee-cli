@@ -191,6 +191,48 @@ func TestTableFormatter_AmountCommaFormat(t *testing.T) {
 	}
 }
 
+func TestStatusLabel(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"settled", "결제완료"},
+		{"unsettled", "미결제"},
+		{"draft", "임시저장"},
+		{"approved", "승인"},
+		{"unknown_status", "unknown_status"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := StatusLabel(tt.input)
+			if got != tt.want {
+				t.Errorf("StatusLabel(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+type statusRow struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+	Amount int64  `json:"amount"`
+}
+
+func TestTableFormatter_StatusLabel(t *testing.T) {
+	var buf bytes.Buffer
+	f := &TableFormatter{}
+	data := []statusRow{{ID: 1, Status: "settled", Amount: 1000}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "결제완료") {
+		t.Errorf("expected Korean label, got: %s", out)
+	}
+}
+
 func TestFormatAmount(t *testing.T) {
 	tests := []struct {
 		input int64
