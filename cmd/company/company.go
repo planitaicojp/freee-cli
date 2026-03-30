@@ -58,7 +58,8 @@ var listCmd = &cobra.Command{
 			rows[i] = companyRow{ID: c.ID, Name: c.DisplayName, Role: c.Role}
 		}
 
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, rows)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, rows)
 	},
 }
 

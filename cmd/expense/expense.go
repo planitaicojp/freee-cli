@@ -55,12 +55,13 @@ var listCmd = &cobra.Command{
 		freeeAPI := &api.FreeeAPI{Client: client}
 
 		format := cmdutil.GetFormat(cmd)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 		if format != "" && format != "table" {
 			var resp any
 			if err := freeeAPI.ListExpenseApplications(client.CompanyID, "", &resp); err != nil {
 				return err
 			}
-			return output.New(format).Format(os.Stdout, resp)
+			return output.New(format, opts).Format(os.Stdout, resp)
 		}
 
 		var resp model.ExpenseApplicationsResponse
@@ -77,7 +78,7 @@ var listCmd = &cobra.Command{
 				Date:   e.IssueDate,
 			}
 		}
-		return output.New("table").Format(os.Stdout, rows)
+		return output.New("table", opts).Format(os.Stdout, rows)
 	},
 }
 
@@ -174,7 +175,8 @@ var createCmd = &cobra.Command{
 		if err := freeeAPI.CreateExpenseApplication(body, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
 
@@ -216,7 +218,8 @@ var updateCmd = &cobra.Command{
 		if err := freeeAPI.UpdateExpenseApplication(id, body, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
 

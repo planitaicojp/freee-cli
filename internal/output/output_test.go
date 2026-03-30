@@ -233,6 +233,49 @@ func TestTableFormatter_StatusLabel(t *testing.T) {
 	}
 }
 
+func TestTableFormatter_NoHeader(t *testing.T) {
+	var buf bytes.Buffer
+	f := &TableFormatter{Options: Options{NoHeader: true}}
+	data := []testRow{{ID: 1, Name: "Alice"}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "ID") || strings.Contains(out, "NAME") {
+		t.Errorf("headers should be suppressed, got: %s", out)
+	}
+	if !strings.Contains(out, "Alice") {
+		t.Errorf("data should still appear, got: %s", out)
+	}
+}
+
+func TestCSVFormatter_NoHeader(t *testing.T) {
+	var buf bytes.Buffer
+	f := &CSVFormatter{Options: Options{NoHeader: true}}
+	data := []testRow{{ID: 1, Name: "Alice"}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 1 {
+		t.Errorf("expected 1 line (data only), got %d lines: %s", len(lines), out)
+	}
+}
+
+func TestNew_WithOptions(t *testing.T) {
+	f := New("table", Options{NoHeader: true})
+	tf, ok := f.(*TableFormatter)
+	if !ok {
+		t.Fatal("expected TableFormatter")
+	}
+	if !tf.Options.NoHeader {
+		t.Error("expected NoHeader to be true")
+	}
+}
+
 func TestFormatAmount(t *testing.T) {
 	tests := []struct {
 		input int64

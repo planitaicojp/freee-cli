@@ -70,6 +70,7 @@ var listCmd = &cobra.Command{
 
 		format := cmdutil.GetFormat(cmd)
 		fetchAll := cmdutil.IsAll(cmd)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 
 		if fetchAll {
 			limit, _ := cmd.Flags().GetInt("limit")
@@ -94,13 +95,13 @@ var listCmd = &cobra.Command{
 				}
 			}
 			if format != "" && format != "table" {
-				return output.New(format).Format(os.Stdout, map[string]any{"deals": allDeals})
+				return output.New(format, opts).Format(os.Stdout, map[string]any{"deals": allDeals})
 			}
 			rows := make([]model.DealRow, len(allDeals))
 			for i, d := range allDeals {
 				rows[i] = model.DealRow{ID: d.ID, Date: d.IssueDate, Type: d.Type, Amount: d.Amount, Status: d.Status}
 			}
-			return output.New("table").Format(os.Stdout, rows)
+			return output.New("table", opts).Format(os.Stdout, rows)
 		}
 
 		params := buildListParams(cmd)
@@ -109,7 +110,7 @@ var listCmd = &cobra.Command{
 			if err := freeeAPI.ListDeals(client.CompanyID, params, &resp); err != nil {
 				return err
 			}
-			return output.New(format).Format(os.Stdout, resp)
+			return output.New(format, opts).Format(os.Stdout, resp)
 		}
 
 		var resp model.DealsResponse
@@ -120,7 +121,7 @@ var listCmd = &cobra.Command{
 		for i, d := range resp.Deals {
 			rows[i] = model.DealRow{ID: d.ID, Date: d.IssueDate, Type: d.Type, Amount: d.Amount, Status: d.Status}
 		}
-		return output.New("table").Format(os.Stdout, rows)
+		return output.New("table", opts).Format(os.Stdout, rows)
 	},
 }
 
@@ -238,7 +239,8 @@ var createCmd = &cobra.Command{
 		if err := freeeAPI.CreateDeal(body, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
 
@@ -305,7 +307,8 @@ var updateCmd = &cobra.Command{
 		if err := freeeAPI.UpdateDeal(dealID, body, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
 

@@ -42,8 +42,10 @@ func (f *CSVFormatter) Format(w io.Writer, data any) error {
 		}
 		headers[i] = name
 	}
-	if err := writer.Write(headers); err != nil {
-		return err
+	if !f.Options.NoHeader {
+		if err := writer.Write(headers); err != nil {
+			return err
+		}
 	}
 
 	for i := 0; i < val.Len(); i++ {

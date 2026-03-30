@@ -44,8 +44,10 @@ func (f *TableFormatter) Format(w io.Writer, data any) error {
 		}
 		headers[i] = strings.ToUpper(name)
 	}
-	if _, err := fmt.Fprintln(tw, strings.Join(headers, "\t")); err != nil {
-		return err
+	if !f.Options.NoHeader {
+		if _, err := fmt.Fprintln(tw, strings.Join(headers, "\t")); err != nil {
+			return err
+		}
 	}
 
 	for i := 0; i < val.Len(); i++ {
