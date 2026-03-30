@@ -28,6 +28,8 @@ func init() {
 
 	listCmd.Flags().String("status", "", "filter by status")
 	listCmd.Flags().String("partner", "", "filter by partner name")
+	listCmd.Flags().String("from", "", "start date (YYYY-MM-DD)")
+	listCmd.Flags().String("to", "", "end date (YYYY-MM-DD)")
 	listCmd.Flags().Int("limit", 50, "max number of results per page")
 	listCmd.Flags().Int("offset", 0, "offset for pagination")
 	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
@@ -57,18 +59,28 @@ var listCmd = &cobra.Command{
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
 
+		fiscalFrom, fiscalTo, err := cmdutil.ResolveFiscalYear(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
+		if fiscalFrom != "" {
+			_ = cmd.Flags().Set("from", fiscalFrom)
+			_ = cmd.Flags().Set("to", fiscalTo)
+		}
+
+		params := buildInvoiceListParams(cmd)
 		format := cmdutil.GetFormat(cmd)
 		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 		if format != "" && format != "table" {
 			var resp any
-			if err := freeeAPI.ListInvoices(client.CompanyID, "", &resp); err != nil {
+			if err := freeeAPI.ListInvoices(client.CompanyID, params, &resp); err != nil {
 				return err
 			}
 			return output.New(format, opts).Format(os.Stdout, resp)
 		}
 
 		var resp model.InvoicesResponse
-		if err := freeeAPI.ListInvoices(client.CompanyID, "", &resp); err != nil {
+		if err := freeeAPI.ListInvoices(client.CompanyID, params, &resp); err != nil {
 			return err
 		}
 		rows := make([]model.InvoiceRow, len(resp.Invoices))
@@ -84,6 +96,35 @@ var listCmd = &cobra.Command{
 		}
 		return output.New("table", opts).Format(os.Stdout, rows)
 	},
+}
+
+func buildInvoiceListParams(cmd *cobra.Command) string {
+	params := ""
+	add := func(key, value string) {
+		if value != "" {
+			if params != "" {
+				params += "&"
+			}
+			params += key + "=" + value
+		}
+	}
+	status, _ := cmd.Flags().GetString("status")
+	add("invoice_status", status)
+	partner, _ := cmd.Flags().GetString("partner")
+	add("partner_code", partner)
+	from, _ := cmd.Flags().GetString("from")
+	add("start_issue_date", from)
+	to, _ := cmd.Flags().GetString("to")
+	add("end_issue_date", to)
+	limit, _ := cmd.Flags().GetInt("limit")
+	if limit > 0 {
+		add("limit", fmt.Sprintf("%d", limit))
+	}
+	offset, _ := cmd.Flags().GetInt("offset")
+	if offset > 0 {
+		add("offset", fmt.Sprintf("%d", offset))
+	}
+	return params
 }
 
 var showCmd = &cobra.Command{

@@ -68,6 +68,15 @@ var listCmd = &cobra.Command{
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
 
+		fiscalFrom, fiscalTo, err := cmdutil.ResolveFiscalYear(cmd, freeeAPI, client.CompanyID)
+		if err != nil {
+			return err
+		}
+		if fiscalFrom != "" {
+			_ = cmd.Flags().Set("from", fiscalFrom)
+			_ = cmd.Flags().Set("to", fiscalTo)
+		}
+
 		format := cmdutil.GetFormat(cmd)
 		fetchAll := cmdutil.IsAll(cmd)
 		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
