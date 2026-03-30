@@ -1,6 +1,6 @@
 # freee CLI — 설계 명세서
 
-**Version**: 0.3.0
+**Version**: 0.4.1
 **Status**: Phase 1 완료 / Phase 2 개발 중
 **Binary**: `freee`
 **Repository**: [planitaicojp/freee-cli](https://github.com/planitaicojp/freee-cli)
