@@ -1077,12 +1077,32 @@ freee hr-time-clock create --type clock_in
 
 | 버전 | 날짜 | 내용 |
 |------|------|------|
-| **v0.4.0** | 2026-03-29 | 이름 해결 (`--partner-name`, `--account-name`) + ADR-4 부분 일치 확장 |
+| **v0.4.1** | 2026-03-30 | Table 사용성 (콤마 포맷, 한국어 라벨, --no-header) + --fiscal-year + resolve 리팩토링 |
+| v0.4.0 | 2026-03-29 | 이름 해결 (`--partner-name`, `--account-name`) + ADR-4 부분 일치 확장 |
 | v0.3.0 | 2026-03-20 | Phase 1 전체 스텁 구현 + lint 에러 전체 수정 |
 | v0.2.1 | 2026-03-11 | 유닛 테스트 (api/errors/output) + GitHub Actions CI |
 | v0.2.0 | 2026-03-11 | Agent 신뢰성 향상 (`--all` 페이지네이션, Retry-After, 에러 힌트, `--dry-run`) |
 | v0.1.1 | 2026-03-10 | list/show 출력 개선 (typed models, key-value 포맷) |
 | v0.1.0 | 2026-03-10 | Phase 1 스캐폴딩, OAuth2 인증, 기본 커맨드 골격 |
+
+### v0.4.1 변경 내용
+
+**Table 출력 개선:**
+- 금액 콤마 포맷: int64 필드에 `1,234,567` 형식 적용 (ID/코드 필드 제외)
+- 한국어 상태 라벨: `settled` → `결제완료`, `draft` → `임시저장` 등 11개 번역
+- `--no-header` 글로벌 플래그: table/CSV 모드에서 헤더 행 생략
+- `output.New()` 팩토리에 `Options` 변수 추가 (backward-compatible variadic)
+
+**--fiscal-year 글로벌 플래그:**
+- 결산월 API 조회 → from/to 자동 계산
+- deal list, invoice list, expense list 지원
+- invoice list, expense list에 --from/--to 플래그 추가
+- --fiscal-year와 --from/--to 상호 배타 (exit 4)
+
+**Resolve 패키지 리팩토링:**
+- `Named` 인터페이스 + Go 제네릭으로 중복 제거 (~77줄 삭감)
+- 테스트 서버 URL path 검증 추가
+- `--account-item-name` alias 테스트 추가
 
 ### v0.4.0 변경 내용
 
