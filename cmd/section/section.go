@@ -25,6 +25,7 @@ func init() {
 	Cmd.AddCommand(deleteCmd)
 
 	createCmd.Flags().String("name", "", "section name (required)")
+	_ = createCmd.MarkFlagRequired("name")
 	createCmd.Flags().String("shortcut1", "", "shortcut 1")
 	createCmd.Flags().String("shortcut2", "", "shortcut 2")
 

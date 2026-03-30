@@ -26,6 +26,7 @@ func init() {
 	Cmd.AddCommand(deleteCmd)
 
 	createCmd.Flags().String("name", "", "partner name (required)")
+	_ = createCmd.MarkFlagRequired("name")
 	createCmd.Flags().String("code", "", "partner code")
 	createCmd.Flags().String("long-name", "", "long name (正式名称)")
 	createCmd.Flags().String("shortcut1", "", "shortcut 1 (カナ)")

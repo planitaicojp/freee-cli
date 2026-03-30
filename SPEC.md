@@ -1,6 +1,6 @@
 # freee CLI — 설계 명세서
 
-**Version**: 0.4.1
+**Version**: 0.4.2
 **Status**: Phase 1 완료 / Phase 2 개발 중
 **Binary**: `freee`
 **Repository**: [planitaicojp/freee-cli](https://github.com/planitaicojp/freee-cli)
@@ -1077,6 +1077,7 @@ freee hr-time-clock create --type clock_in
 
 | 버전 | 날짜 | 내용 |
 |------|------|------|
+| **v0.4.2** | 2026-03-30 | `freee schema` 커맨드 추가 (cobra 트리에서 플래그 스키마 추출, table/JSON 출력) |
 | **v0.4.1** | 2026-03-30 | Table 사용성 (콤마 포맷, 한국어 라벨, --no-header) + --fiscal-year + resolve 리팩토링 |
 | v0.4.0 | 2026-03-29 | 이름 해결 (`--partner-name`, `--account-name`) + ADR-4 부분 일치 확장 |
 | v0.3.0 | 2026-03-20 | Phase 1 전체 스텁 구현 + lint 에러 전체 수정 |
@@ -1103,6 +1104,18 @@ freee hr-time-clock create --type clock_in
 - `Named` 인터페이스 + Go 제네릭으로 중복 제거 (~77줄 삭감)
 - 테스트 서버 URL path 검증 추가
 - `--account-item-name` alias 테스트 추가
+
+### v0.4.2 변경 내용
+
+**Schema 커맨드:**
+- `cmd/schema/` 패키지 신설 — `NewCmd()` 팩토리 함수로 rootCmd 주입
+- `freee schema` — 전체 리소스 목록 출력
+- `freee schema <resource>` — 하위 액션 목록 출력
+- `freee schema <resource> <action>` — 플래그 스키마 출력 (name, type, required, default, description)
+- `--show-global` 플래그: 글로벌 플래그 포함 여부 제어
+- table/JSON 출력 지원 (--format 글로벌 플래그 준수)
+- hidden 커맨드 (completion) 목록에서 제외
+- leaf 커맨드 자동 감지 (자식 없으면 바로 플래그 스키마)
 
 ### v0.4.0 변경 내용
 

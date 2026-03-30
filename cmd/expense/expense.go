@@ -35,6 +35,8 @@ func init() {
 
 	createCmd.Flags().String("title", "", "expense title (required)")
 	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
+	_ = createCmd.MarkFlagRequired("title")
+	_ = createCmd.MarkFlagRequired("date")
 	createCmd.Flags().String("description", "", "description")
 	createCmd.Flags().Int64("account-item-id", 0, "account item ID")
 	createCmd.Flags().String("account-name", "", "account item name (resolves to account item ID)")
