@@ -27,14 +27,16 @@ import (
 var (
 	version = "dev"
 
-	flagProfile   string
-	flagFormat    string
-	flagCompanyID int64
-	flagNoInput   bool
-	flagQuiet     bool
-	flagVerbose   bool
-	flagNoColor   bool
-	flagDryRun    bool
+	flagProfile    string
+	flagFormat     string
+	flagCompanyID  int64
+	flagNoInput    bool
+	flagQuiet      bool
+	flagVerbose    bool
+	flagNoColor    bool
+	flagDryRun     bool
+	flagNoHeader   bool
+	flagFiscalYear int
 )
 
 // rootCmd is the base command.
@@ -64,6 +66,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagVerbose, "verbose", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "disable color output")
 	rootCmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "preview request without executing (mutating commands only)")
+	rootCmd.PersistentFlags().BoolVar(&flagNoHeader, "no-header", false, "suppress table/CSV headers")
+	rootCmd.PersistentFlags().IntVar(&flagFiscalYear, "fiscal-year", 0, "fiscal year (auto-sets --from/--to based on company closing month)")
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)

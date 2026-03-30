@@ -27,3 +27,6 @@ type PartnerRow struct {
 	Name string `json:"name"`
 	Code string `json:"code"`
 }
+
+func (p Partner) GetID() int64    { return p.ID }
+func (p Partner) GetName() string { return p.Name }

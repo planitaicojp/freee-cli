@@ -35,12 +35,13 @@ var listCmd = &cobra.Command{
 		freeeAPI := &api.FreeeAPI{Client: client}
 
 		format := cmdutil.GetFormat(cmd)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 		if format != "" && format != "table" {
 			var resp any
 			if err := freeeAPI.ListAccountItems(client.CompanyID, &resp); err != nil {
 				return err
 			}
-			return output.New(format).Format(os.Stdout, resp)
+			return output.New(format, opts).Format(os.Stdout, resp)
 		}
 
 		var resp model.AccountItemsResponse
@@ -58,7 +59,7 @@ var listCmd = &cobra.Command{
 				Shortcut: a.ShortcutNum,
 			}
 		}
-		return output.New("table").Format(os.Stdout, rows)
+		return output.New("table", opts).Format(os.Stdout, rows)
 	},
 }
 

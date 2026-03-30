@@ -11,6 +11,12 @@ import (
 	"github.com/planitaicojp/freee-cli/internal/model"
 )
 
+// Named is implemented by types that have an ID and a Name.
+type Named interface {
+	GetID() int64
+	GetName() string
+}
+
 // resolveNotFoundError is a not-found error with exit code 3 and clean message.
 type resolveNotFoundError struct {
 	message string
@@ -57,45 +63,7 @@ func PartnerID(cmd *cobra.Command, freeeAPI *api.FreeeAPI, companyID int64) (int
 		}
 	}
 
-	return matchByName(name, allPartners, "partner")
-}
-
-// matchByName finds a partner by name. Exact match first (case-insensitive),
-// then partial match (contains, case-insensitive) as fallback.
-func matchByName(name string, partners []model.Partner, resource string) (int64, error) {
-	nameLower := strings.ToLower(name)
-
-	// Exact match (case-insensitive)
-	var exactMatches []model.Partner
-	for _, p := range partners {
-		if strings.EqualFold(p.Name, name) {
-			exactMatches = append(exactMatches, p)
-		}
-	}
-	if len(exactMatches) == 1 {
-		return exactMatches[0].ID, nil
-	}
-	if len(exactMatches) > 1 {
-		return 0, multipleMatchError(resource, name, exactMatches, true)
-	}
-
-	// Partial match (contains, case-insensitive)
-	var partialMatches []model.Partner
-	for _, p := range partners {
-		if strings.Contains(strings.ToLower(p.Name), nameLower) {
-			partialMatches = append(partialMatches, p)
-		}
-	}
-	if len(partialMatches) == 1 {
-		return partialMatches[0].ID, nil
-	}
-	if len(partialMatches) > 1 {
-		return 0, multipleMatchError(resource, name, partialMatches, false)
-	}
-
-	return 0, &resolveNotFoundError{
-		message: fmt.Sprintf("no %s found matching %q\nhint: run 'freee %s list' to see available %ss", resource, name, resource, resource),
-	}
+	return matchByName(name, allPartners, "partner", "--partner-id")
 }
 
 // AccountItemID resolves an account item ID from --account-item-id or --account-name flags.
@@ -104,7 +72,6 @@ func matchByName(name string, partners []model.Partner, resource string) (int64,
 func AccountItemID(cmd *cobra.Command, freeeAPI *api.FreeeAPI, companyID int64) (int64, error) {
 	idChanged := cmd.Flags().Changed("account-item-id")
 	nameChanged := cmd.Flags().Changed("account-name")
-	// Check alias too
 	if !nameChanged && cmd.Flags().Lookup("account-item-name") != nil {
 		nameChanged = cmd.Flags().Changed("account-item-name")
 	}
@@ -126,85 +93,71 @@ func AccountItemID(cmd *cobra.Command, freeeAPI *api.FreeeAPI, companyID int64) 
 
 	name, _ := cmd.Flags().GetString("account-name")
 	if name == "" {
-		// Try alias
 		name, _ = cmd.Flags().GetString("account-item-name")
 	}
 
-	// Fetch all account items (no pagination needed — single call)
 	var resp model.AccountItemsResponse
 	if err := freeeAPI.ListAccountItems(companyID, &resp); err != nil {
 		return 0, err
 	}
 
-	return matchAccountItemByName(name, resp.AccountItems, "account-item")
+	return matchByName(name, resp.AccountItems, "account-item", "--account-item-id")
 }
 
-// matchAccountItemByName finds an account item by name.
-func matchAccountItemByName(name string, items []model.AccountItem, resource string) (int64, error) {
+// matchByName finds an item by name. Exact match first (case-insensitive),
+// then partial match (contains, case-insensitive) as fallback.
+func matchByName[T Named](name string, items []T, resource, idFlag string) (int64, error) {
 	nameLower := strings.ToLower(name)
 
-	// Exact match
-	var exactMatches []model.AccountItem
+	// Exact match (case-insensitive)
+	var exactMatches []T
 	for _, item := range items {
-		if strings.EqualFold(item.Name, name) {
+		if strings.EqualFold(item.GetName(), name) {
 			exactMatches = append(exactMatches, item)
 		}
 	}
 	if len(exactMatches) == 1 {
-		return exactMatches[0].ID, nil
+		return exactMatches[0].GetID(), nil
 	}
 	if len(exactMatches) > 1 {
-		return 0, multipleAccountMatchError(resource, name, exactMatches, true)
+		return 0, multipleMatchError(resource, name, exactMatches, true, idFlag)
 	}
 
-	// Partial match
-	var partialMatches []model.AccountItem
+	// Partial match (contains, case-insensitive)
+	var partialMatches []T
 	for _, item := range items {
-		if strings.Contains(strings.ToLower(item.Name), nameLower) {
+		if strings.Contains(strings.ToLower(item.GetName()), nameLower) {
 			partialMatches = append(partialMatches, item)
 		}
 	}
 	if len(partialMatches) == 1 {
-		return partialMatches[0].ID, nil
+		return partialMatches[0].GetID(), nil
 	}
 	if len(partialMatches) > 1 {
-		return 0, multipleAccountMatchError(resource, name, partialMatches, false)
+		return 0, multipleMatchError(resource, name, partialMatches, false, idFlag)
 	}
 
+	listCmd := resource
+	if resource == "account-item" {
+		listCmd = "account"
+	}
 	return 0, &resolveNotFoundError{
-		message: fmt.Sprintf("no %s found matching %q\nhint: run 'freee account list' to see available account items", resource, name),
+		message: fmt.Sprintf("no %s found matching %q\nhint: run 'freee %s list' to see available %ss", resource, name, listCmd, resource),
 	}
 }
 
-func multipleAccountMatchError(resource, name string, matches []model.AccountItem, exact bool) error {
+func multipleMatchError[T Named](resource, name string, matches []T, exact bool, idFlag string) error {
 	matchType := "partially"
 	if exact {
 		matchType = "exactly"
 	}
 	var lines []string
 	for _, m := range matches {
-		lines = append(lines, fmt.Sprintf("  - %s (id: %d)", m.Name, m.ID))
+		lines = append(lines, fmt.Sprintf("  - %s (id: %d)", m.GetName(), m.GetID()))
 	}
-	hint := "hint: use --account-item-id to specify, or use the full name"
+	hint := fmt.Sprintf("hint: use %s to specify, or use the full name", idFlag)
 	if exact {
-		hint = "hint: use --account-item-id to specify"
-	}
-	msg := fmt.Sprintf("multiple %ss %s match %q:\n%s\n%s", resource, matchType, name, strings.Join(lines, "\n"), hint)
-	return &cerrors.ValidationError{Message: msg}
-}
-
-func multipleMatchError(resource, name string, matches []model.Partner, exact bool) error {
-	matchType := "partially"
-	if exact {
-		matchType = "exactly"
-	}
-	var lines []string
-	for _, m := range matches {
-		lines = append(lines, fmt.Sprintf("  - %s (id: %d)", m.Name, m.ID))
-	}
-	hint := "hint: use --partner-id to specify, or use the full name"
-	if exact {
-		hint = "hint: use --partner-id to specify"
+		hint = fmt.Sprintf("hint: use %s to specify", idFlag)
 	}
 	msg := fmt.Sprintf("multiple %ss %s match %q:\n%s\n%s", resource, matchType, name, strings.Join(lines, "\n"), hint)
 	return &cerrors.ValidationError{Message: msg}

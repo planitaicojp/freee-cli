@@ -31,7 +31,8 @@ var showCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, cfg)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, cfg)
 	},
 }
 

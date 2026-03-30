@@ -166,3 +166,134 @@ func TestTableFormatter_NonSlice(t *testing.T) {
 		t.Errorf("expected string output, got %q", buf.String())
 	}
 }
+
+type amountRow struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Amount int64  `json:"amount"`
+	Tax    int    `json:"tax_code"`
+}
+
+func TestTableFormatter_AmountCommaFormat(t *testing.T) {
+	var buf bytes.Buffer
+	f := &TableFormatter{}
+	data := []amountRow{{ID: 12345, Name: "Test", Amount: 1234567, Tax: 101}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "1,234,567") {
+		t.Errorf("expected comma-formatted amount, got: %s", out)
+	}
+	if strings.Contains(out, "12,345") {
+		t.Errorf("ID should not be comma-formatted, got: %s", out)
+	}
+}
+
+func TestStatusLabel(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"settled", "결제완료"},
+		{"unsettled", "미결제"},
+		{"draft", "임시저장"},
+		{"approved", "승인"},
+		{"unknown_status", "unknown_status"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := StatusLabel(tt.input)
+			if got != tt.want {
+				t.Errorf("StatusLabel(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+type statusRow struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+	Amount int64  `json:"amount"`
+}
+
+func TestTableFormatter_StatusLabel(t *testing.T) {
+	var buf bytes.Buffer
+	f := &TableFormatter{}
+	data := []statusRow{{ID: 1, Status: "settled", Amount: 1000}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "결제완료") {
+		t.Errorf("expected Korean label, got: %s", out)
+	}
+}
+
+func TestTableFormatter_NoHeader(t *testing.T) {
+	var buf bytes.Buffer
+	f := &TableFormatter{Options: Options{NoHeader: true}}
+	data := []testRow{{ID: 1, Name: "Alice"}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "ID") || strings.Contains(out, "NAME") {
+		t.Errorf("headers should be suppressed, got: %s", out)
+	}
+	if !strings.Contains(out, "Alice") {
+		t.Errorf("data should still appear, got: %s", out)
+	}
+}
+
+func TestCSVFormatter_NoHeader(t *testing.T) {
+	var buf bytes.Buffer
+	f := &CSVFormatter{Options: Options{NoHeader: true}}
+	data := []testRow{{ID: 1, Name: "Alice"}}
+
+	if err := f.Format(&buf, data); err != nil {
+		t.Fatalf("Format error: %v", err)
+	}
+	out := buf.String()
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 1 {
+		t.Errorf("expected 1 line (data only), got %d lines: %s", len(lines), out)
+	}
+}
+
+func TestNew_WithOptions(t *testing.T) {
+	f := New("table", Options{NoHeader: true})
+	tf, ok := f.(*TableFormatter)
+	if !ok {
+		t.Fatal("expected TableFormatter")
+	}
+	if !tf.Options.NoHeader {
+		t.Error("expected NoHeader to be true")
+	}
+}
+
+func TestFormatAmount(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0"},
+		{123, "123"},
+		{1234, "1,234"},
+		{1234567, "1,234,567"},
+		{-1234567, "-1,234,567"},
+		{-100, "-100"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%d", tt.input), func(t *testing.T) {
+			got := formatAmount(tt.input)
+			if got != tt.want {
+				t.Errorf("formatAmount(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

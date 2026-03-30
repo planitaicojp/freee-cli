@@ -21,6 +21,9 @@ type AccountItem struct {
 	UpdateDate      string `json:"update_date"`
 }
 
+func (a AccountItem) GetID() int64    { return a.ID }
+func (a AccountItem) GetName() string { return a.Name }
+
 // AccountItemRow is a display-friendly row for table output.
 type AccountItemRow struct {
 	ID       int64  `json:"id"`

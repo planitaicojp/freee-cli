@@ -88,6 +88,12 @@ func IsAll(cmd *cobra.Command) bool {
 	return v
 }
 
+// IsNoHeader returns whether --no-header is set.
+func IsNoHeader(cmd *cobra.Command) bool {
+	v, _ := cmd.Flags().GetBool("no-header")
+	return v
+}
+
 func getCompanyID(cmd *cobra.Command, profile config.Profile) int64 {
 	if id, _ := cmd.Flags().GetInt64("company-id"); id != 0 {
 		return id

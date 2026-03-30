@@ -44,12 +44,13 @@ var listCmd = &cobra.Command{
 		freeeAPI := &api.FreeeAPI{Client: client}
 
 		format := cmdutil.GetFormat(cmd)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 		if format != "" && format != "table" {
 			var resp any
 			if err := freeeAPI.ListSections(client.CompanyID, &resp); err != nil {
 				return err
 			}
-			return output.New(format).Format(os.Stdout, resp)
+			return output.New(format, opts).Format(os.Stdout, resp)
 		}
 
 		var resp model.SectionsResponse
@@ -60,7 +61,7 @@ var listCmd = &cobra.Command{
 		for i, s := range resp.Sections {
 			rows[i] = model.SectionRow{ID: s.ID, Name: s.Name}
 		}
-		return output.New("table").Format(os.Stdout, rows)
+		return output.New("table", opts).Format(os.Stdout, rows)
 	},
 }
 
@@ -95,7 +96,8 @@ var createCmd = &cobra.Command{
 		if err := freeeAPI.CreateSection(body, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
 
@@ -137,7 +139,8 @@ var updateCmd = &cobra.Command{
 		if err := freeeAPI.UpdateSection(id, body, &resp); err != nil {
 			return err
 		}
-		return output.New(cmdutil.GetFormat(cmd)).Format(os.Stdout, resp)
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
 
