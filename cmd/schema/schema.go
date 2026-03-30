@@ -227,7 +227,7 @@ func outputFlagSchema(w io.Writer, format string, schema CommandSchema, showGlob
 			req = "yes"
 		}
 		def := f.Default
-		if def == "" || def == "0" || def == "false" {
+		if def == "" || (f.Type == "bool" && def == "false") {
 			def = "-"
 		}
 		fmt.Fprintf(tw, "--%s\t%s\t%s\t%s\t%s\n", f.Name, f.Type, req, def, f.Description)
