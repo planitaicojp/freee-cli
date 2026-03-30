@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -15,6 +16,10 @@ import (
 // newTestServer returns an httptest server that serves partner list responses.
 func newTestServer(partners []map[string]any) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/partners") {
+			http.NotFound(w, r)
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{"partners": partners}) //nolint:errcheck
 	}))
 }
@@ -168,6 +173,10 @@ func TestPartnerID_NeitherFlag(t *testing.T) {
 
 func newAccountTestServer(items []map[string]any) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/account_items") {
+			http.NotFound(w, r)
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{"account_items": items}) //nolint:errcheck
 	}))
 }
@@ -303,5 +312,27 @@ func TestAccountItemID_NeitherFlag(t *testing.T) {
 	}
 	if id != 0 {
 		t.Errorf("got %d, want 0", id)
+	}
+}
+
+func TestAccountItemID_ByAlias(t *testing.T) {
+	items := []map[string]any{
+		{"id": float64(10), "name": "旅費交通費"},
+	}
+	ts := newAccountTestServer(items)
+	defer ts.Close()
+
+	cmd := &cobra.Command{Use: "test", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
+	cmd.Flags().Int64("account-item-id", 0, "")
+	cmd.Flags().String("account-name", "", "")
+	cmd.Flags().String("account-item-name", "", "alias")
+	cmd.Flags().Set("account-item-name", "旅費交通費")
+
+	id, err := AccountItemID(cmd, newTestAPI(ts), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != 10 {
+		t.Errorf("got %d, want 10", id)
 	}
 }
