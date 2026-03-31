@@ -27,6 +27,7 @@ func init() {
 	Cmd.AddCommand(showCmd)
 	Cmd.AddCommand(createCmd)
 	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
 
 	// update flags
 	updateCmd.Flags().String("date", "", "issue date YYYY-MM-DD")
@@ -464,6 +465,30 @@ var updateCmd = &cobra.Command{
 		}
 		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
+	},
+}
+
+var deleteCmd = &cobra.Command{
+	Use:   "delete <id>",
+	Short: "Delete a manual journal",
+	Args:  cmdutil.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid manual journal ID: %s", args[0])
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/manual_journals/%d\n", id)
+			return nil
+		}
+
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+		freeeAPI := &api.FreeeAPI{Client: client}
+		return freeeAPI.DeleteManualJournal(client.CompanyID, id)
 	},
 }
 
