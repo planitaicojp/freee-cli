@@ -1,6 +1,7 @@
 package manualjournal
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -9,8 +10,10 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
+	cerrors "github.com/planitaicojp/freee-cli/internal/errors"
 	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
+	"github.com/planitaicojp/freee-cli/internal/resolve"
 )
 
 // Cmd is the manual-journal command group.
@@ -22,6 +25,7 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.AddCommand(listCmd)
 	Cmd.AddCommand(showCmd)
+	Cmd.AddCommand(createCmd)
 
 	// list flags
 	listCmd.Flags().String("from", "", "start date (YYYY-MM-DD)")
@@ -38,6 +42,21 @@ func init() {
 	listCmd.Flags().Int("limit", 50, "max number of results per page")
 	listCmd.Flags().Int("offset", 0, "offset for pagination")
 	listCmd.Flags().Bool("all", false, "fetch all pages automatically")
+
+	// create flags — simple mode
+	createCmd.Flags().String("date", "", "issue date YYYY-MM-DD (required)")
+	createCmd.Flags().Int64("debit-account-id", 0, "debit account item ID")
+	createCmd.Flags().String("debit-account-name", "", "debit account item name (resolves to ID)")
+	createCmd.Flags().Int64("credit-account-id", 0, "credit account item ID")
+	createCmd.Flags().String("credit-account-name", "", "credit account item name (resolves to ID)")
+	createCmd.Flags().Int64("amount", 0, "amount for simple 1:1 entry")
+	createCmd.Flags().Int64("tax-code", 0, "tax code (required in simple mode, applied to both debit/credit)")
+	createCmd.Flags().String("description", "", "description/memo")
+	createCmd.Flags().Bool("adjustment", false, "mark as closing/adjustment entry")
+	// create flags — JSON mode
+	createCmd.Flags().String("details-json", "", "details as JSON string")
+	createCmd.Flags().String("details-file", "", "details from JSON file path")
+	_ = createCmd.MarkFlagRequired("date")
 }
 
 // buildBaseListParams builds query params excluding pagination.
@@ -239,5 +258,204 @@ var showCmd = &cobra.Command{
 			}
 		}
 		return nil
+	},
+}
+
+// isSimpleMode returns true if any simple-mode flag was provided.
+func isSimpleMode(cmd *cobra.Command) bool {
+	for _, f := range []string{"debit-account-id", "debit-account-name", "credit-account-id", "credit-account-name", "amount"} {
+		if cmd.Flags().Changed(f) {
+			return true
+		}
+	}
+	return false
+}
+
+// isJSONMode returns true if any JSON-mode flag was provided.
+func isJSONMode(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("details-json") || cmd.Flags().Changed("details-file")
+}
+
+// parseJSONDetails parses details from --details-json or --details-file flag.
+func parseJSONDetails(cmd *cobra.Command) ([]map[string]any, error) {
+	var raw string
+	if cmd.Flags().Changed("details-json") {
+		raw, _ = cmd.Flags().GetString("details-json")
+	} else {
+		path, _ := cmd.Flags().GetString("details-file")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read details file: %w", err)
+		}
+		raw = string(data)
+	}
+	var details []map[string]any
+	if err := json.Unmarshal([]byte(raw), &details); err != nil {
+		return nil, fmt.Errorf("invalid details JSON: %w", err)
+	}
+	return details, nil
+}
+
+// validateDetails checks balance and line count for details.
+func validateDetails(details []map[string]any) error {
+	if len(details) > 100 {
+		return &cerrors.ValidationError{Message: "details exceed 100 lines\nhint: freee API allows max 100 debit+credit lines combined"}
+	}
+	var debitSum, creditSum int64
+	for i, d := range details {
+		tc, ok := d["tax_code"]
+		if !ok || tc == nil {
+			return &cerrors.ValidationError{Message: fmt.Sprintf("details[%d]: tax_code is required\nhint: each detail entry must include tax_code", i)}
+		}
+		amt, _ := d["amount"].(float64) // JSON numbers are float64
+		side, _ := d["entry_side"].(string)
+		switch side {
+		case "debit":
+			debitSum += int64(amt)
+		case "credit":
+			creditSum += int64(amt)
+		default:
+			return &cerrors.ValidationError{Message: fmt.Sprintf("details[%d]: entry_side must be 'debit' or 'credit', got %q", i, side)}
+		}
+	}
+	if debitSum != creditSum {
+		return &cerrors.ValidationError{Message: fmt.Sprintf("debit sum (%d) != credit sum (%d)\nhint: debit and credit totals must match", debitSum, creditSum)}
+	}
+	return nil
+}
+
+// resolveAccountID resolves account item ID from --<prefix>-account-id or --<prefix>-account-name.
+// Uses resolve.AccountItemIDByName directly (no hidden flag mutation).
+func resolveAccountID(cmd *cobra.Command, freeeAPI *api.FreeeAPI, companyID int64, prefix string) (int64, error) {
+	idFlag := prefix + "-account-id"
+	nameFlag := prefix + "-account-name"
+	idChanged := cmd.Flags().Changed(idFlag)
+	nameChanged := cmd.Flags().Changed(nameFlag)
+
+	if idChanged && nameChanged {
+		return 0, &cerrors.ValidationError{Message: fmt.Sprintf("--%s and --%s are mutually exclusive", idFlag, nameFlag)}
+	}
+	if idChanged {
+		id, _ := cmd.Flags().GetInt64(idFlag)
+		return id, nil
+	}
+	if nameChanged {
+		name, _ := cmd.Flags().GetString(nameFlag)
+		return resolve.AccountItemIDByName(name, freeeAPI, companyID)
+	}
+	return 0, nil
+}
+
+var createCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a manual journal",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		simple := isSimpleMode(cmd)
+		jsonMode := isJSONMode(cmd)
+
+		if simple && jsonMode {
+			return &cerrors.ValidationError{Message: "simple mode flags and --details-json/--details-file are mutually exclusive\nhint: use one or the other"}
+		}
+		if !simple && !jsonMode {
+			return &cerrors.ValidationError{Message: "must provide either simple mode flags (--debit-account-id, --amount, etc.) or --details-json/--details-file"}
+		}
+
+		date, _ := cmd.Flags().GetString("date")
+		adjustment, _ := cmd.Flags().GetBool("adjustment")
+
+		var details []map[string]any
+
+		if simple {
+			client, err := cmdutil.NewClient(cmd)
+			if err != nil {
+				return err
+			}
+			freeeAPI := &api.FreeeAPI{Client: client}
+
+			debitAccountID, err := resolveAccountID(cmd, freeeAPI, client.CompanyID, "debit")
+			if err != nil {
+				return err
+			}
+			if debitAccountID == 0 {
+				return &cerrors.ValidationError{Message: "--debit-account-id or --debit-account-name is required in simple mode"}
+			}
+
+			creditAccountID, err := resolveAccountID(cmd, freeeAPI, client.CompanyID, "credit")
+			if err != nil {
+				return err
+			}
+			if creditAccountID == 0 {
+				return &cerrors.ValidationError{Message: "--credit-account-id or --credit-account-name is required in simple mode"}
+			}
+
+			amount, _ := cmd.Flags().GetInt64("amount")
+			if amount == 0 {
+				return &cerrors.ValidationError{Message: "--amount is required in simple mode"}
+			}
+			taxCode, _ := cmd.Flags().GetInt64("tax-code")
+			if taxCode == 0 {
+				return &cerrors.ValidationError{Message: "--tax-code is required in simple mode\nhint: freee API requires tax_code for each detail entry"}
+			}
+			desc, _ := cmd.Flags().GetString("description")
+
+			details = []map[string]any{
+				{"entry_side": "debit", "account_item_id": debitAccountID, "amount": amount, "tax_code": taxCode, "description": desc},
+				{"entry_side": "credit", "account_item_id": creditAccountID, "amount": amount, "tax_code": taxCode, "description": desc},
+			}
+
+			body := map[string]any{
+				"company_id": client.CompanyID,
+				"issue_date": date,
+				"adjustment": adjustment,
+				"details":    details,
+			}
+
+			if cmdutil.IsDryRun(cmd) {
+				fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/manual_journals")
+				return output.New("json").Format(os.Stdout, body)
+			}
+
+			var resp any
+			if err := freeeAPI.CreateManualJournal(body, &resp); err != nil {
+				return err
+			}
+			opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+			return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
+		}
+
+		// JSON mode
+		var err error
+		details, err = parseJSONDetails(cmd)
+		if err != nil {
+			return err
+		}
+		if err := validateDetails(details); err != nil {
+			return err
+		}
+
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+		freeeAPI := &api.FreeeAPI{Client: client}
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+			"issue_date": date,
+			"adjustment": adjustment,
+			"details":    details,
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/manual_journals")
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		var resp any
+		if err := freeeAPI.CreateManualJournal(body, &resp); err != nil {
+			return err
+		}
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
