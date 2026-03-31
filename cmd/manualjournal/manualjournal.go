@@ -26,6 +26,20 @@ func init() {
 	Cmd.AddCommand(listCmd)
 	Cmd.AddCommand(showCmd)
 	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(updateCmd)
+
+	// update flags
+	updateCmd.Flags().String("date", "", "issue date YYYY-MM-DD")
+	updateCmd.Flags().Int64("debit-account-id", 0, "debit account item ID (simple mode: replaces all details)")
+	updateCmd.Flags().String("debit-account-name", "", "debit account item name")
+	updateCmd.Flags().Int64("credit-account-id", 0, "credit account item ID (simple mode: replaces all details)")
+	updateCmd.Flags().String("credit-account-name", "", "credit account item name")
+	updateCmd.Flags().Int64("amount", 0, "amount (simple mode)")
+	updateCmd.Flags().Int64("tax-code", 0, "tax code (simple mode)")
+	updateCmd.Flags().String("description", "", "description/memo (simple mode)")
+	updateCmd.Flags().Bool("adjustment", false, "mark as closing/adjustment entry")
+	updateCmd.Flags().String("details-json", "", "details as JSON string (replaces all details)")
+	updateCmd.Flags().String("details-file", "", "details from JSON file path (replaces all details)")
 
 	// list flags
 	listCmd.Flags().String("from", "", "start date (YYYY-MM-DD)")
@@ -344,6 +358,113 @@ func resolveAccountID(cmd *cobra.Command, freeeAPI *api.FreeeAPI, companyID int6
 		return resolve.AccountItemIDByName(name, freeeAPI, companyID)
 	}
 	return 0, nil
+}
+
+var updateCmd = &cobra.Command{
+	Use:   "update <id>",
+	Short: "Update a manual journal",
+	Args:  cmdutil.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid manual journal ID: %s", args[0])
+		}
+
+		simple := isSimpleMode(cmd)
+		jsonMode := isJSONMode(cmd)
+
+		if simple && jsonMode {
+			return &cerrors.ValidationError{Message: "simple mode flags and --details-json/--details-file are mutually exclusive"}
+		}
+
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+		freeeAPI := &api.FreeeAPI{Client: client}
+
+		// GET current state for merge
+		var current model.ManualJournalResponse
+		if err := freeeAPI.GetManualJournal(client.CompanyID, id, &current); err != nil {
+			return err
+		}
+
+		// Start with current values
+		issueDate := current.ManualJournal.IssueDate
+		adjustment := current.ManualJournal.Adjustment
+
+		// Merge changed fields
+		if cmd.Flags().Changed("date") {
+			issueDate, _ = cmd.Flags().GetString("date")
+		}
+		if cmd.Flags().Changed("adjustment") {
+			adjustment, _ = cmd.Flags().GetBool("adjustment")
+		}
+
+		// Build details
+		var details any
+		if simple {
+			// Simple mode: replace all details with new 1:1 entry
+			debitAccountID, err := resolveAccountID(cmd, freeeAPI, client.CompanyID, "debit")
+			if err != nil {
+				return err
+			}
+			if debitAccountID == 0 {
+				return &cerrors.ValidationError{Message: "--debit-account-id or --debit-account-name is required in simple mode"}
+			}
+			creditAccountID, err := resolveAccountID(cmd, freeeAPI, client.CompanyID, "credit")
+			if err != nil {
+				return err
+			}
+			if creditAccountID == 0 {
+				return &cerrors.ValidationError{Message: "--credit-account-id or --credit-account-name is required in simple mode"}
+			}
+			amount, _ := cmd.Flags().GetInt64("amount")
+			if amount == 0 {
+				return &cerrors.ValidationError{Message: "--amount is required in simple mode"}
+			}
+			taxCode, _ := cmd.Flags().GetInt64("tax-code")
+			if taxCode == 0 {
+				return &cerrors.ValidationError{Message: "--tax-code is required in simple mode"}
+			}
+			desc, _ := cmd.Flags().GetString("description")
+			details = []map[string]any{
+				{"entry_side": "debit", "account_item_id": debitAccountID, "amount": amount, "tax_code": taxCode, "description": desc},
+				{"entry_side": "credit", "account_item_id": creditAccountID, "amount": amount, "tax_code": taxCode, "description": desc},
+			}
+		} else if jsonMode {
+			parsed, err := parseJSONDetails(cmd)
+			if err != nil {
+				return err
+			}
+			if err := validateDetails(parsed); err != nil {
+				return err
+			}
+			details = parsed
+		} else {
+			// No details change — re-send existing details
+			details = current.ManualJournal.Details
+		}
+
+		body := map[string]any{
+			"company_id": client.CompanyID,
+			"issue_date": issueDate,
+			"adjustment": adjustment,
+			"details":    details,
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] PUT /api/1/manual_journals/%d\n", id)
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		var resp any
+		if err := freeeAPI.UpdateManualJournal(id, body, &resp); err != nil {
+			return err
+		}
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
+	},
 }
 
 var createCmd = &cobra.Command{
