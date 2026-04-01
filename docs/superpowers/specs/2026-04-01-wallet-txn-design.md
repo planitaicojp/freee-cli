@@ -147,6 +147,7 @@ func (a *FreeeAPI) DeleteWalletTxn(companyID, id int64) error
 - `--walletable-type` 검증: `bank_account`, `credit_card`, `wallet`만 허용
 - `--entry-side` 검증: `income`, `expense`만 허용
 - `--dry-run`: 리퀘스트 바디만 출력, API 호출 없음
+- `--format` 지원 (transfer create와 동일)
 - 성공 시: 생성된 wallet-txn 상세 출력
 
 ### delete
@@ -168,7 +169,7 @@ func (a *FreeeAPI) DeleteWalletTxn(companyID, id int64) error
 | `--limit` | o | | | |
 | `--offset` | o | | | |
 | `--all` | o | | | |
-| `--format` | o | o | | |
+| `--format` | o | o | o | |
 | `--date` | | | required | |
 | `--amount` | | | required | |
 | `--description` | | | optional | |
@@ -177,7 +178,7 @@ func (a *FreeeAPI) DeleteWalletTxn(companyID, id int64) error
 
 ## Validation
 
-- `--walletable-type`: `bank_account`, `credit_card`, `wallet`만 허용 (transfer의 `validateWalletableType` 재활용)
+- `--walletable-type`: `bank_account`, `credit_card`, `wallet`만 허용 (transfer의 `validateWalletableType`을 `cmdutil`로 추출하여 공유)
 - `--entry-side`: `income`, `expense`만 허용
 - list에서 `--walletable-type`과 `--walletable-id` 중 하나만 지정 시 에러: `both --walletable-type and --walletable-id must be specified together`
 
