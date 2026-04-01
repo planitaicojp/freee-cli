@@ -24,6 +24,7 @@ func init() {
 	Cmd.AddCommand(listCmd)
 	Cmd.AddCommand(showCmd)
 	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(updateCmd)
 
 	// create flags
 	createCmd.Flags().String("date", "", "transfer date YYYY-MM-DD (required)")
@@ -39,6 +40,15 @@ func init() {
 	_ = createCmd.MarkFlagRequired("from-id")
 	_ = createCmd.MarkFlagRequired("to-type")
 	_ = createCmd.MarkFlagRequired("to-id")
+
+	// update flags
+	updateCmd.Flags().String("date", "", "transfer date YYYY-MM-DD")
+	updateCmd.Flags().Int64("amount", 0, "transfer amount")
+	updateCmd.Flags().String("from-type", "", "source account type: bank_account, credit_card, wallet")
+	updateCmd.Flags().Int64("from-id", 0, "source account ID")
+	updateCmd.Flags().String("to-type", "", "destination account type: bank_account, credit_card, wallet")
+	updateCmd.Flags().Int64("to-id", 0, "destination account ID")
+	updateCmd.Flags().String("description", "", "description/memo")
 
 	// list flags
 	listCmd.Flags().String("from", "", "start date (YYYY-MM-DD)")
@@ -218,6 +228,100 @@ var createCmd = &cobra.Command{
 		freeeAPI := &api.FreeeAPI{Client: client}
 		var resp any
 		if err := freeeAPI.CreateTransfer(body, &resp); err != nil {
+			return err
+		}
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
+	},
+}
+
+var updateCmd = &cobra.Command{
+	Use:   "update <id>",
+	Short: "Update a transfer",
+	Args:  cmdutil.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid transfer ID: %s", args[0])
+		}
+
+		// Validate walletable types if provided
+		if cmd.Flags().Changed("from-type") {
+			fromType, _ := cmd.Flags().GetString("from-type")
+			if err := validateWalletableType("from-type", fromType); err != nil {
+				return err
+			}
+		}
+		if cmd.Flags().Changed("to-type") {
+			toType, _ := cmd.Flags().GetString("to-type")
+			if err := validateWalletableType("to-type", toType); err != nil {
+				return err
+			}
+		}
+
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+		freeeAPI := &api.FreeeAPI{Client: client}
+
+		// GET current state for merge
+		var current model.TransferResponse
+		if err := freeeAPI.GetTransfer(client.CompanyID, id, &current); err != nil {
+			return err
+		}
+
+		// Start with current values
+		tr := current.Transfer
+		date := tr.Date
+		amount := tr.Amount
+		fromType := tr.FromWalletableType
+		fromID := tr.FromWalletableID
+		toType := tr.ToWalletableType
+		toID := tr.ToWalletableID
+		description := tr.Description
+
+		// Merge changed fields
+		if cmd.Flags().Changed("date") {
+			date, _ = cmd.Flags().GetString("date")
+		}
+		if cmd.Flags().Changed("amount") {
+			amount, _ = cmd.Flags().GetInt64("amount")
+		}
+		if cmd.Flags().Changed("from-type") {
+			fromType, _ = cmd.Flags().GetString("from-type")
+		}
+		if cmd.Flags().Changed("from-id") {
+			fromID, _ = cmd.Flags().GetInt64("from-id")
+		}
+		if cmd.Flags().Changed("to-type") {
+			toType, _ = cmd.Flags().GetString("to-type")
+		}
+		if cmd.Flags().Changed("to-id") {
+			toID, _ = cmd.Flags().GetInt64("to-id")
+		}
+		if cmd.Flags().Changed("description") {
+			description, _ = cmd.Flags().GetString("description")
+		}
+
+		body := map[string]any{
+			"company_id":           client.CompanyID,
+			"date":                 date,
+			"amount":               amount,
+			"from_walletable_type": fromType,
+			"from_walletable_id":   fromID,
+			"to_walletable_type":   toType,
+			"to_walletable_id":     toID,
+			"description":          description,
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] PUT /api/1/transfers/%d\n", id)
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		var resp any
+		if err := freeeAPI.UpdateTransfer(id, body, &resp); err != nil {
 			return err
 		}
 		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
