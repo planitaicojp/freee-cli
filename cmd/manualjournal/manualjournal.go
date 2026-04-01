@@ -159,24 +159,24 @@ var listCmd = &cobra.Command{
 		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 
 		if fetchAll {
-			limit, _ := cmd.Flags().GetInt("limit")
-			if limit <= 0 {
-				limit = 100
-			}
+			const fetchLimit = 100
 			baseParams := buildBaseListParams(cmd)
 			var all []model.ManualJournal
-			for offset := 0; ; offset += limit {
+			for offset := 0; ; offset += fetchLimit {
 				p := baseParams
 				if p != "" {
 					p += "&"
 				}
-				p += fmt.Sprintf("limit=%d&offset=%d", limit, offset)
+				p += fmt.Sprintf("limit=%d&offset=%d", fetchLimit, offset)
 				var resp model.ManualJournalsResponse
 				if err := freeeAPI.ListManualJournals(client.CompanyID, p, &resp); err != nil {
 					return err
 				}
+				if len(resp.ManualJournals) == 0 {
+					break
+				}
 				all = append(all, resp.ManualJournals...)
-				if len(resp.ManualJournals) < limit {
+				if len(resp.ManualJournals) < fetchLimit {
 					break
 				}
 			}
@@ -322,7 +322,17 @@ func validateDetails(details []map[string]any) error {
 		if !ok || tc == nil {
 			return &cerrors.ValidationError{Message: fmt.Sprintf("details[%d]: tax_code is required\nhint: each detail entry must include tax_code", i)}
 		}
-		amt, _ := d["amount"].(float64) // JSON numbers are float64
+		amtVal, ok := d["amount"]
+		if !ok || amtVal == nil {
+			return &cerrors.ValidationError{Message: fmt.Sprintf("details[%d]: amount is required", i)}
+		}
+		amt, ok := amtVal.(float64)
+		if !ok {
+			return &cerrors.ValidationError{Message: fmt.Sprintf("details[%d]: amount must be a number", i)}
+		}
+		if amt != float64(int64(amt)) {
+			return &cerrors.ValidationError{Message: fmt.Sprintf("details[%d]: amount must be an integer", i)}
+		}
 		side, _ := d["entry_side"].(string)
 		switch side {
 		case "debit":
