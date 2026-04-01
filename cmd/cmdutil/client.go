@@ -94,8 +94,7 @@ func IsNoHeader(cmd *cobra.Command) bool {
 	return v
 }
 
-// ValidWalletableTypes lists the valid walletable type values.
-var ValidWalletableTypes = map[string]bool{
+var validWalletableTypes = map[string]bool{
 	"bank_account": true,
 	"credit_card":  true,
 	"wallet":       true,
@@ -103,7 +102,7 @@ var ValidWalletableTypes = map[string]bool{
 
 // ValidateWalletableType validates that the given value is a valid walletable type.
 func ValidateWalletableType(flagName, value string) error {
-	if !ValidWalletableTypes[value] {
+	if !validWalletableTypes[value] {
 		return &cerrors.ValidationError{
 			Message: fmt.Sprintf("--%s must be one of: bank_account, credit_card, wallet (got %q)\nhint: run 'freee walletable list' to see available accounts", flagName, value),
 		}
