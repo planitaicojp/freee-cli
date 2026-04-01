@@ -9,6 +9,7 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
+	cerrors "github.com/planitaicojp/freee-cli/internal/errors"
 	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
@@ -22,6 +23,22 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.AddCommand(listCmd)
 	Cmd.AddCommand(showCmd)
+	Cmd.AddCommand(createCmd)
+
+	// create flags
+	createCmd.Flags().String("date", "", "transfer date YYYY-MM-DD (required)")
+	createCmd.Flags().Int64("amount", 0, "transfer amount (required)")
+	createCmd.Flags().String("from-type", "", "source account type: bank_account, credit_card, wallet (required)")
+	createCmd.Flags().Int64("from-id", 0, "source account ID (required)")
+	createCmd.Flags().String("to-type", "", "destination account type: bank_account, credit_card, wallet (required)")
+	createCmd.Flags().Int64("to-id", 0, "destination account ID (required)")
+	createCmd.Flags().String("description", "", "description/memo")
+	_ = createCmd.MarkFlagRequired("date")
+	_ = createCmd.MarkFlagRequired("amount")
+	_ = createCmd.MarkFlagRequired("from-type")
+	_ = createCmd.MarkFlagRequired("from-id")
+	_ = createCmd.MarkFlagRequired("to-type")
+	_ = createCmd.MarkFlagRequired("to-id")
 
 	// list flags
 	listCmd.Flags().String("from", "", "start date (YYYY-MM-DD)")
@@ -140,6 +157,71 @@ var listCmd = &cobra.Command{
 			rows[i] = tr.ToRow()
 		}
 		return output.New("table", opts).Format(os.Stdout, rows)
+	},
+}
+
+var validWalletableTypes = map[string]bool{
+	"bank_account": true,
+	"credit_card":  true,
+	"wallet":       true,
+}
+
+func validateWalletableType(flagName, value string) error {
+	if !validWalletableTypes[value] {
+		return &cerrors.ValidationError{
+			Message: fmt.Sprintf("--%s must be one of: bank_account, credit_card, wallet (got %q)\nhint: run 'freee walletable list' to see available accounts", flagName, value),
+		}
+	}
+	return nil
+}
+
+var createCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a transfer",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fromType, _ := cmd.Flags().GetString("from-type")
+		if err := validateWalletableType("from-type", fromType); err != nil {
+			return err
+		}
+		toType, _ := cmd.Flags().GetString("to-type")
+		if err := validateWalletableType("to-type", toType); err != nil {
+			return err
+		}
+
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+
+		date, _ := cmd.Flags().GetString("date")
+		amount, _ := cmd.Flags().GetInt64("amount")
+		fromID, _ := cmd.Flags().GetInt64("from-id")
+		toID, _ := cmd.Flags().GetInt64("to-id")
+		description, _ := cmd.Flags().GetString("description")
+
+		body := map[string]any{
+			"company_id":           client.CompanyID,
+			"date":                 date,
+			"amount":               amount,
+			"from_walletable_type": fromType,
+			"from_walletable_id":   fromID,
+			"to_walletable_type":   toType,
+			"to_walletable_id":     toID,
+			"description":          description,
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintln(os.Stderr, "[dry-run] POST /api/1/transfers")
+			return output.New("json").Format(os.Stdout, body)
+		}
+
+		freeeAPI := &api.FreeeAPI{Client: client}
+		var resp any
+		if err := freeeAPI.CreateTransfer(body, &resp); err != nil {
+			return err
+		}
+		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
+		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
 	},
 }
 
