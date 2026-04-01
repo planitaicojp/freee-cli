@@ -25,6 +25,7 @@ func init() {
 	Cmd.AddCommand(showCmd)
 	Cmd.AddCommand(createCmd)
 	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
 
 	// create flags
 	createCmd.Flags().String("date", "", "transfer date YYYY-MM-DD (required)")
@@ -326,6 +327,30 @@ var updateCmd = &cobra.Command{
 		}
 		opts := output.Options{NoHeader: cmdutil.IsNoHeader(cmd)}
 		return output.New(cmdutil.GetFormat(cmd), opts).Format(os.Stdout, resp)
+	},
+}
+
+var deleteCmd = &cobra.Command{
+	Use:   "delete <id>",
+	Short: "Delete a transfer",
+	Args:  cmdutil.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid transfer ID: %s", args[0])
+		}
+
+		if cmdutil.IsDryRun(cmd) {
+			fmt.Fprintf(os.Stderr, "[dry-run] DELETE /api/1/transfers/%d\n", id)
+			return nil
+		}
+
+		client, err := cmdutil.NewClient(cmd)
+		if err != nil {
+			return err
+		}
+		freeeAPI := &api.FreeeAPI{Client: client}
+		return freeeAPI.DeleteTransfer(client.CompanyID, id)
 	},
 }
 
