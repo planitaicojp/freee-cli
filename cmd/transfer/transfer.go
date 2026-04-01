@@ -350,7 +350,11 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 		freeeAPI := &api.FreeeAPI{Client: client}
-		return freeeAPI.DeleteTransfer(client.CompanyID, id)
+		if err := freeeAPI.DeleteTransfer(client.CompanyID, id); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Deleted transfer %d\n", id)
+		return nil
 	},
 }
 
