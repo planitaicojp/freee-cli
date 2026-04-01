@@ -9,7 +9,6 @@ import (
 
 	"github.com/planitaicojp/freee-cli/cmd/cmdutil"
 	"github.com/planitaicojp/freee-cli/internal/api"
-	cerrors "github.com/planitaicojp/freee-cli/internal/errors"
 	"github.com/planitaicojp/freee-cli/internal/model"
 	"github.com/planitaicojp/freee-cli/internal/output"
 )
@@ -171,31 +170,17 @@ var listCmd = &cobra.Command{
 	},
 }
 
-var validWalletableTypes = map[string]bool{
-	"bank_account": true,
-	"credit_card":  true,
-	"wallet":       true,
-}
-
-func validateWalletableType(flagName, value string) error {
-	if !validWalletableTypes[value] {
-		return &cerrors.ValidationError{
-			Message: fmt.Sprintf("--%s must be one of: bank_account, credit_card, wallet (got %q)\nhint: run 'freee walletable list' to see available accounts", flagName, value),
-		}
-	}
-	return nil
-}
 
 var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a transfer",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fromType, _ := cmd.Flags().GetString("from-type")
-		if err := validateWalletableType("from-type", fromType); err != nil {
+		if err := cmdutil.ValidateWalletableType("from-type", fromType); err != nil {
 			return err
 		}
 		toType, _ := cmd.Flags().GetString("to-type")
-		if err := validateWalletableType("to-type", toType); err != nil {
+		if err := cmdutil.ValidateWalletableType("to-type", toType); err != nil {
 			return err
 		}
 
@@ -249,13 +234,13 @@ var updateCmd = &cobra.Command{
 		// Validate walletable types if provided
 		if cmd.Flags().Changed("from-type") {
 			fromType, _ := cmd.Flags().GetString("from-type")
-			if err := validateWalletableType("from-type", fromType); err != nil {
+			if err := cmdutil.ValidateWalletableType("from-type", fromType); err != nil {
 				return err
 			}
 		}
 		if cmd.Flags().Changed("to-type") {
 			toType, _ := cmd.Flags().GetString("to-type")
-			if err := validateWalletableType("to-type", toType); err != nil {
+			if err := cmdutil.ValidateWalletableType("to-type", toType); err != nil {
 				return err
 			}
 		}

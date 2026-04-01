@@ -94,6 +94,23 @@ func IsNoHeader(cmd *cobra.Command) bool {
 	return v
 }
 
+// ValidWalletableTypes lists the valid walletable type values.
+var ValidWalletableTypes = map[string]bool{
+	"bank_account": true,
+	"credit_card":  true,
+	"wallet":       true,
+}
+
+// ValidateWalletableType validates that the given value is a valid walletable type.
+func ValidateWalletableType(flagName, value string) error {
+	if !ValidWalletableTypes[value] {
+		return &cerrors.ValidationError{
+			Message: fmt.Sprintf("--%s must be one of: bank_account, credit_card, wallet (got %q)\nhint: run 'freee walletable list' to see available accounts", flagName, value),
+		}
+	}
+	return nil
+}
+
 func getCompanyID(cmd *cobra.Command, profile config.Profile) int64 {
 	if id, _ := cmd.Flags().GetInt64("company-id"); id != 0 {
 		return id
