@@ -20,6 +20,7 @@ import (
 	"github.com/planitaicojp/freee-cli/cmd/schema"
 	"github.com/planitaicojp/freee-cli/cmd/section"
 	"github.com/planitaicojp/freee-cli/cmd/tag"
+	"github.com/planitaicojp/freee-cli/cmd/transfer"
 	"github.com/planitaicojp/freee-cli/cmd/walletable"
 	"github.com/planitaicojp/freee-cli/internal/api"
 	"github.com/planitaicojp/freee-cli/internal/config"
@@ -86,6 +87,7 @@ func init() {
 	rootCmd.AddCommand(journal.Cmd)
 	rootCmd.AddCommand(manualjournal.Cmd)
 	rootCmd.AddCommand(expense.Cmd)
+	rootCmd.AddCommand(transfer.Cmd)
 	rootCmd.AddCommand(walletable.Cmd)
 	rootCmd.AddCommand(schema.NewCmd(rootCmd))
 }
