@@ -242,3 +242,30 @@ func (a *FreeeAPI) UpdateManualJournal(id int64, body, result any) error {
 func (a *FreeeAPI) DeleteManualJournal(companyID, id int64) error {
 	return a.Client.Delete(a.url("/manual_journals/%d?company_id=%d", id, companyID))
 }
+
+// --- Transfers ---
+
+func (a *FreeeAPI) ListTransfers(companyID int64, params string, result any) error {
+	url := a.url("/transfers?company_id=%d", companyID)
+	if params != "" {
+		url += "&" + params
+	}
+	return a.Client.Get(url, result)
+}
+
+func (a *FreeeAPI) GetTransfer(companyID, id int64, result any) error {
+	return a.Client.Get(a.url("/transfers/%d?company_id=%d", id, companyID), result)
+}
+
+func (a *FreeeAPI) CreateTransfer(body, result any) error {
+	_, err := a.Client.Post(a.url("/transfers"), body, result)
+	return err
+}
+
+func (a *FreeeAPI) UpdateTransfer(id int64, body, result any) error {
+	return a.Client.Put(a.url("/transfers/%d", id), body, result)
+}
+
+func (a *FreeeAPI) DeleteTransfer(companyID, id int64) error {
+	return a.Client.Delete(a.url("/transfers/%d?company_id=%d", id, companyID))
+}
