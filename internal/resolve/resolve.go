@@ -104,6 +104,17 @@ func AccountItemID(cmd *cobra.Command, freeeAPI *api.FreeeAPI, companyID int64) 
 	return matchByName(name, resp.AccountItems, "account-item", "--account-item-id")
 }
 
+// AccountItemIDByName resolves an account item ID by name directly,
+// without relying on cobra command flags. Used by manual-journal commands
+// that need to resolve debit/credit accounts independently.
+func AccountItemIDByName(name string, freeeAPI *api.FreeeAPI, companyID int64) (int64, error) {
+	var resp model.AccountItemsResponse
+	if err := freeeAPI.ListAccountItems(companyID, &resp); err != nil {
+		return 0, err
+	}
+	return matchByName(name, resp.AccountItems, "account-item", "--account-item-id")
+}
+
 // matchByName finds an item by name. Exact match first (case-insensitive),
 // then partial match (contains, case-insensitive) as fallback.
 func matchByName[T Named](name string, items []T, resource, idFlag string) (int64, error) {

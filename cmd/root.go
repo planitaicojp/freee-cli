@@ -15,6 +15,7 @@ import (
 	"github.com/planitaicojp/freee-cli/cmd/invoice"
 	"github.com/planitaicojp/freee-cli/cmd/item"
 	"github.com/planitaicojp/freee-cli/cmd/journal"
+	"github.com/planitaicojp/freee-cli/cmd/manualjournal"
 	"github.com/planitaicojp/freee-cli/cmd/partner"
 	"github.com/planitaicojp/freee-cli/cmd/schema"
 	"github.com/planitaicojp/freee-cli/cmd/section"
@@ -83,6 +84,7 @@ func init() {
 	rootCmd.AddCommand(tag.Cmd)
 	rootCmd.AddCommand(item.Cmd)
 	rootCmd.AddCommand(journal.Cmd)
+	rootCmd.AddCommand(manualjournal.Cmd)
 	rootCmd.AddCommand(expense.Cmd)
 	rootCmd.AddCommand(walletable.Cmd)
 	rootCmd.AddCommand(schema.NewCmd(rootCmd))

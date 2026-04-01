@@ -215,3 +215,30 @@ func (a *FreeeAPI) ListWalletables(companyID int64, result any) error {
 func (a *FreeeAPI) GetWalletable(companyID int64, walletableType string, walletableID int64, result any) error {
 	return a.Client.Get(a.url("/walletables/%s/%d?company_id=%d", walletableType, walletableID, companyID), result)
 }
+
+// --- Manual Journals ---
+
+func (a *FreeeAPI) ListManualJournals(companyID int64, params string, result any) error {
+	url := a.url("/manual_journals?company_id=%d", companyID)
+	if params != "" {
+		url += "&" + params
+	}
+	return a.Client.Get(url, result)
+}
+
+func (a *FreeeAPI) GetManualJournal(companyID, id int64, result any) error {
+	return a.Client.Get(a.url("/manual_journals/%d?company_id=%d", id, companyID), result)
+}
+
+func (a *FreeeAPI) CreateManualJournal(body, result any) error {
+	_, err := a.Client.Post(a.url("/manual_journals"), body, result)
+	return err
+}
+
+func (a *FreeeAPI) UpdateManualJournal(id int64, body, result any) error {
+	return a.Client.Put(a.url("/manual_journals/%d", id), body, result)
+}
+
+func (a *FreeeAPI) DeleteManualJournal(companyID, id int64) error {
+	return a.Client.Delete(a.url("/manual_journals/%d?company_id=%d", id, companyID))
+}
