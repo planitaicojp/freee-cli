@@ -33,6 +33,16 @@ brews:
     install: |
       bin.install "freee"
 
+scoops:
+  - repository:
+      owner: planitaicojp
+      name: bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    name: freee
+    homepage: "https://planitaicojp.github.io/freee-cli-pages/"
+    description: "CLI tool for freee public API"
+    license: "Apache-2.0"
+
 changelog:
   sort: asc
   filters:
