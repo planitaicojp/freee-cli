@@ -26,8 +26,9 @@ freee skill remove    — confirm and delete skill directory
 
 1. Check `git` is on PATH → `ValidationError` if missing
 2. Check skill directory does not exist → `ValidationError` if already installed (hint: use `freee skill update`)
-3. `git clone <repo> <skillDir>` (stdout/stderr → os.Stderr)
-4. Print success message to stderr
+3. `os.MkdirAll(baseDir)` — ensure `~/.claude/skills/` exists
+4. `git clone <repo> <skillDir>` (stdout/stderr → os.Stderr)
+5. Print success message to stderr
 
 ### update
 
@@ -39,7 +40,7 @@ freee skill remove    — confirm and delete skill directory
 ### remove
 
 1. Check skill directory exists → `ValidationError` if not installed
-2. `prompt.Confirm("Remove freee-cli-skill?")` — respects `--no-input` (returns error if set)
+2. `prompt.Confirm("Remove freee-cli-skill?")` — respects `--no-input` (returns error if set). If user declines, print "Cancelled." to stderr and return nil
 3. `os.RemoveAll(skillDir)`
 4. Print success message to stderr
 
