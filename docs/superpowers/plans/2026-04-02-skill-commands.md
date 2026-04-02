@@ -33,10 +33,13 @@
 package skill
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	cerrors "github.com/planitaicojp/freee-cli/internal/errors"
 )
 
 func TestInstallCmd(t *testing.T) {
@@ -83,6 +86,23 @@ func TestInstallCmd(t *testing.T) {
 		skillDir := filepath.Join(dir, skillName)
 		if _, err := os.Stat(filepath.Join(skillDir, ".git")); os.IsNotExist(err) {
 			t.Error("expected .git directory after install")
+		}
+	})
+
+	t.Run("returns NetworkError on clone failure", func(t *testing.T) {
+		if _, err := exec.LookPath("git"); err != nil {
+			t.Skip("git not available")
+		}
+		dir := t.TempDir()
+
+		// Use runInstallRepo with a bogus URL to force clone failure
+		err := runInstallRepo(dir, "https://invalid.example.com/no-such-repo.git")
+		if err == nil {
+			t.Fatal("expected error on clone failure")
+		}
+		var netErr *cerrors.NetworkError
+		if !errors.As(err, &netErr) {
+			t.Errorf("expected NetworkError, got %T: %v", err, err)
 		}
 	})
 }
@@ -164,21 +184,35 @@ func TestRemoveCmd(t *testing.T) {
 		}
 	})
 
-	t.Run("removes successfully with no-input bypassed", func(t *testing.T) {
+	t.Run("removes successfully via removeSkillDir", func(t *testing.T) {
 		dir := t.TempDir()
 		skillDir := filepath.Join(dir, skillName)
 		if err := os.MkdirAll(skillDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 
-		// Call runRemoveForce which skips confirmation
-		err := runRemoveForce(dir)
+		// Test the core removal logic directly (runRemove requires interactive confirmation)
+		err := removeSkillDir(dir)
 		if err != nil {
 			t.Fatalf("remove failed: %v", err)
 		}
 
 		if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
 			t.Error("expected skill directory to be removed")
+		}
+	})
+
+	t.Run("runRemove errors under no-input", func(t *testing.T) {
+		dir := t.TempDir()
+		skillDir := filepath.Join(dir, skillName)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("FREEE_NO_INPUT", "1")
+
+		err := runRemove(dir)
+		if err == nil {
+			t.Fatal("expected error under --no-input")
 		}
 	})
 }
@@ -246,6 +280,10 @@ func defaultSkillBase() (string, error) {
 }
 
 func runInstall(baseDir string) error {
+	return runInstallRepo(baseDir, skillRepo)
+}
+
+func runInstallRepo(baseDir, repoURL string) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return &cerrors.ValidationError{Message: "git is required to install skills"}
 	}
@@ -259,7 +297,7 @@ func runInstall(baseDir string) error {
 		return fmt.Errorf("failed to create skills directory: %w", err)
 	}
 
-	cmd := exec.Command("git", "clone", skillRepo, skillDir)
+	cmd := exec.Command("git", "clone", repoURL, skillDir)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -305,16 +343,6 @@ func runRemove(baseDir string) error {
 	if !ok {
 		fmt.Fprintln(os.Stderr, "Cancelled.")
 		return nil
-	}
-
-	return removeSkillDir(baseDir)
-}
-
-// runRemoveForce removes without confirmation (for testing).
-func runRemoveForce(baseDir string) error {
-	skillDir := filepath.Join(baseDir, skillName)
-	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
-		return &cerrors.ValidationError{Message: "not installed"}
 	}
 
 	return removeSkillDir(baseDir)
