@@ -1,7 +1,7 @@
 # freee - freee API CLI
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 [English](README-en.md) | [한국어](README-ko.md)
 
@@ -21,45 +21,48 @@ freee 公開 API 用のコマンドラインインターフェースです。Go 
 
 ## インストール
 
-### ソースからビルド
+### macOS / Linux (Homebrew)
+
+```bash
+brew install planitaicojp/tap/freee
+```
+
+### Windows (Scoop)
+
+```powershell
+scoop bucket add planitaicojp https://github.com/planitaicojp/bucket
+scoop install freee
+```
+
+### Go install
 
 ```bash
 go install github.com/planitaicojp/freee-cli@latest
 ```
 
-### Git からビルド
-
-```bash
-git clone https://github.com/planitaicojp/freee-cli.git
-cd freee-cli
-make build
-sudo mv freee /usr/local/bin/
-```
-
 ### リリースバイナリ
 
-[Releases](https://github.com/planitaicojp/freee-cli/releases) ページからダウンロード、または以下のコマンドを使用してください：
+[Releases](https://github.com/planitaicojp/freee-cli/releases) ページからお使いの OS・アーキテクチャに合ったバイナリをダウンロードしてください。
 
-**Linux (amd64)**
+**Linux / macOS**
 
 ```bash
-curl -Lo freee https://github.com/planitaicojp/freee-cli/releases/latest/download/freee-linux-amd64
-chmod +x freee
+VERSION=$(curl -s https://api.github.com/repos/planitaicojp/freee-cli/releases/latest | grep tag_name | cut -d '"' -f4)
+# Linux amd64
+curl -fsSL "https://github.com/planitaicojp/freee-cli/releases/download/${VERSION}/freee-cli_${VERSION#v}_linux_amd64.tar.gz" | tar xz
+# macOS Apple Silicon
+curl -fsSL "https://github.com/planitaicojp/freee-cli/releases/download/${VERSION}/freee-cli_${VERSION#v}_darwin_arm64.tar.gz" | tar xz
 sudo mv freee /usr/local/bin/
 ```
 
-**macOS (Apple Silicon)**
-
-```bash
-curl -Lo freee https://github.com/planitaicojp/freee-cli/releases/latest/download/freee-darwin-arm64
-chmod +x freee
-sudo mv freee /usr/local/bin/
-```
-
-**Windows (amd64)**
+**Windows (PowerShell)**
 
 ```powershell
-Invoke-WebRequest -Uri https://github.com/planitaicojp/freee-cli/releases/latest/download/freee-windows-amd64.exe -OutFile freee.exe
+$version = (Invoke-RestMethod https://api.github.com/repos/planitaicojp/freee-cli/releases/latest).tag_name
+$v = $version -replace '^v', ''
+Invoke-WebRequest -Uri "https://github.com/planitaicojp/freee-cli/releases/download/$version/freee-cli_${v}_windows_amd64.zip" -OutFile freee.zip
+Expand-Archive freee.zip -DestinationPath .
+Remove-Item freee.zip
 ```
 
 ## 事前準備
@@ -108,8 +111,11 @@ freee partner list
 | `freee section` | 部門管理（list / create / update / delete） |
 | `freee tag` | メモタグ管理（list / create / update / delete） |
 | `freee item` | 品目管理（list / create / update / delete） |
+| `freee manual-journal` | 振替伝票管理（list / show / create / update / delete） |
 | `freee journal` | 仕訳帳（list） |
 | `freee expense` | 経費申請管理（list / show / create / update / delete） |
+| `freee transfer` | 口座振替管理（list / show / create / update / delete） |
+| `freee wallet-txn` | 口座明細管理（list / show / create / delete） |
 | `freee walletable` | 口座管理（list / show） |
 | `freee config` | CLI 設定管理（show / set / path） |
 
@@ -207,4 +213,4 @@ make clean     # 成果物を削除
 
 ## ライセンス
 
-MIT License - 詳細は [LICENSE](LICENSE) をご覧ください。
+Apache License 2.0 - 詳細は [LICENSE](LICENSE) をご覧ください。
