@@ -51,7 +51,7 @@ func runInstallRepo(baseDir, repoURL string) error {
 		return &cerrors.ValidationError{Message: "already installed, use 'freee skill update'"}
 	}
 
-	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create skills directory: %w", err)
 	}
 
@@ -59,6 +59,7 @@ func runInstallRepo(baseDir, repoURL string) error {
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(skillDir)
 		return &cerrors.NetworkError{Err: fmt.Errorf("git clone failed: %w", err)}
 	}
 
