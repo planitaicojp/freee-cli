@@ -22,6 +22,7 @@ import (
 	"github.com/planitaicojp/freee-cli/cmd/tag"
 	"github.com/planitaicojp/freee-cli/cmd/transfer"
 	"github.com/planitaicojp/freee-cli/cmd/walletable"
+	"github.com/planitaicojp/freee-cli/cmd/wallettxn"
 	"github.com/planitaicojp/freee-cli/internal/api"
 	"github.com/planitaicojp/freee-cli/internal/config"
 	cerrors "github.com/planitaicojp/freee-cli/internal/errors"
@@ -89,6 +90,7 @@ func init() {
 	rootCmd.AddCommand(expense.Cmd)
 	rootCmd.AddCommand(transfer.Cmd)
 	rootCmd.AddCommand(walletable.Cmd)
+	rootCmd.AddCommand(wallettxn.Cmd)
 	rootCmd.AddCommand(schema.NewCmd(rootCmd))
 }
 

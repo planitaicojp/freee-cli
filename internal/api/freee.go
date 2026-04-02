@@ -269,3 +269,26 @@ func (a *FreeeAPI) UpdateTransfer(id int64, body, result any) error {
 func (a *FreeeAPI) DeleteTransfer(companyID, id int64) error {
 	return a.Client.Delete(a.url("/transfers/%d?company_id=%d", id, companyID))
 }
+
+// --- Wallet Transactions ---
+
+func (a *FreeeAPI) ListWalletTxns(companyID int64, params string, result any) error {
+	url := a.url("/wallet_txns?company_id=%d", companyID)
+	if params != "" {
+		url += "&" + params
+	}
+	return a.Client.Get(url, result)
+}
+
+func (a *FreeeAPI) GetWalletTxn(companyID, id int64, result any) error {
+	return a.Client.Get(a.url("/wallet_txns/%d?company_id=%d", id, companyID), result)
+}
+
+func (a *FreeeAPI) CreateWalletTxn(body, result any) error {
+	_, err := a.Client.Post(a.url("/wallet_txns"), body, result)
+	return err
+}
+
+func (a *FreeeAPI) DeleteWalletTxn(companyID, id int64) error {
+	return a.Client.Delete(a.url("/wallet_txns/%d?company_id=%d", id, companyID))
+}

@@ -918,13 +918,14 @@ profiles:
 | 51 | `freee version` | 버전 표시 | ☑ |
 | 52 | `freee completion` | 셸 자동완성 생성 | ☑ |
 
-### Phase 2: Accounting 확장 — 분개장·이체·명세·세금 (19개 커맨드)
+### Phase 2: Accounting 확장 — 분개장·이체·명세·세금 (18개 커맨드)
 
 | # | 커맨드 | 설명 | 상태 |
 |---|--------|------|------|
 | 53–57 | `freee manual-journal` CRUD | 분개장 (仕訳帳) | ☐ |
 | 58–62 | `freee transfer` CRUD | 이체 전표 (振替伝票) | ☐ |
-| 63–66 | `freee wallet-txn` CRUD | 구좌 명세 (口座明細) | ☐ |
+| 63–65 | `freee wallet-txn` list/show/create | 구좌 명세 (口座明細) | ☐ |
+| 66 | `freee wallet-txn` delete | 구좌 명세 삭제 | ☐ |
 | 67–69 | `freee walletable` create/update/delete | 구좌 등록/수정/삭제 | ☐ |
 | 70–71 | `freee tax` list/show | 세금 구분 (税区分) | ☐ |
 
@@ -983,12 +984,12 @@ profiles:
 | Phase | 범위 | 커맨드 수 | 완료 | 진척도 |
 |-------|------|-----------|------|--------|
 | Phase 1 | 기반 + Accounting 핵심 | 52 | **52** | **100%** |
-| Phase 2 | Accounting 분개·이체·명세·세금 | 19 | 0 | 0% |
+| Phase 2 | Accounting 분개·이체·명세·세금 | 18 | 0 | 0% |
 | Phase 3 | Accounting 리포트 + 증빙 파일함 | 25 | 0 | 0% |
 | Phase 4 | Accounting 워크플로우 + 서브리소스 | 44 | 0 | 0% |
 | Phase 5 | HR API 전체 | 93 | 0 | 0% |
 | Phase 6 | Invoice / PM / Sales API | 39 | 0 | 0% |
-| **합계** | | **272** | **52** | **19%** |
+| **합계** | | **271** | **52** | **19%** |
 
 ---
 
