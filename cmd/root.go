@@ -19,6 +19,7 @@ import (
 	"github.com/planitaicojp/freee-cli/cmd/partner"
 	"github.com/planitaicojp/freee-cli/cmd/schema"
 	"github.com/planitaicojp/freee-cli/cmd/section"
+	"github.com/planitaicojp/freee-cli/cmd/skill"
 	"github.com/planitaicojp/freee-cli/cmd/tag"
 	"github.com/planitaicojp/freee-cli/cmd/transfer"
 	"github.com/planitaicojp/freee-cli/cmd/walletable"
@@ -92,6 +93,7 @@ func init() {
 	rootCmd.AddCommand(walletable.Cmd)
 	rootCmd.AddCommand(wallettxn.Cmd)
 	rootCmd.AddCommand(schema.NewCmd(rootCmd))
+	rootCmd.AddCommand(skill.Cmd)
 }
 
 // Execute runs the root command.
