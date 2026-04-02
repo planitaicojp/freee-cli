@@ -38,7 +38,7 @@ scoops:
   - repository:
       owner: planitaicojp
       name: bucket
-      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     name: freee
     homepage: "https://planitaicojp.github.io/freee-cli-pages/"
     description: "CLI tool for freee public API"
