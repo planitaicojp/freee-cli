@@ -3,6 +3,7 @@ package manualjournal
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -82,7 +83,7 @@ func buildBaseListParams(cmd *cobra.Command) string {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 	from, _ := cmd.Flags().GetString("from")
@@ -123,7 +124,7 @@ func buildListParams(cmd *cobra.Command) string {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 	if v, _ := cmd.Flags().GetInt("limit"); v > 0 {

@@ -2,6 +2,7 @@ package invoice
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -106,7 +107,7 @@ func buildInvoiceListParams(cmd *cobra.Command) string {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 	status, _ := cmd.Flags().GetString("status")

@@ -2,6 +2,7 @@ package deal
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -357,7 +358,7 @@ func buildBaseListParams(cmd *cobra.Command) string {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 	t, _ := cmd.Flags().GetString("type")
@@ -381,7 +382,7 @@ func buildListParams(cmd *cobra.Command) string {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 	limit, _ := cmd.Flags().GetInt("limit")

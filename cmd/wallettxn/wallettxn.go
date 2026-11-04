@@ -2,6 +2,7 @@ package wallettxn
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -72,7 +73,7 @@ func buildBaseListParams(cmd *cobra.Command) (string, error) {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 
@@ -118,7 +119,7 @@ func buildListParams(cmd *cobra.Command) (string, error) {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 	if v, _ := cmd.Flags().GetInt("limit"); v > 0 {
