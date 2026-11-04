@@ -2,6 +2,7 @@ package expense
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -103,7 +104,7 @@ func buildExpenseListParams(cmd *cobra.Command) string {
 			if params != "" {
 				params += "&"
 			}
-			params += key + "=" + value
+			params += key + "=" + url.QueryEscape(value)
 		}
 	}
 	status, _ := cmd.Flags().GetString("status")
